@@ -1,8 +1,8 @@
 "use client";
-import dynamic from "next/dynamic";
+import { lazy } from "akanjs/webkit";
 import { useEffect, useState } from "react";
 
-const ReactLottiePlayer = dynamic(() => import("react-lottie-player"), { ssr: false });
+const ReactLottiePlayer = lazy(() => import("react-lottie-player"), { ssr: false });
 
 interface LottieProps {
   path: string;

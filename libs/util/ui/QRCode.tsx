@@ -1,5 +1,5 @@
 "use client";
-import { clsx } from "@akanjs/client";
+import { clsx } from "akanjs/client";
 import { QRCodeSVG } from "qrcode.react";
 
 export interface QRCodeProps {

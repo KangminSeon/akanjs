@@ -1,0 +1,30 @@
+export const getNonArrayModel = <T>(arraiedModel: T | T[]): [T, number] => {
+  let arrDepth = 0;
+  let target: T | T[] = arraiedModel;
+  while (Array.isArray(target)) {
+    target = target[0] as T;
+    arrDepth++;
+  }
+  return [target, arrDepth];
+};
+export const arraiedModel = <T = unknown>(modelRef: T, arrDepth = 0) => {
+  let target: T | T[] | T[][] | T[][][] = modelRef;
+  for (let i = 0; i < arrDepth; i++) target = [target as T];
+  return target;
+};
+
+export type ApplyFnToArrayObjectsResult<Input, Output> = Input extends readonly (infer Item)[]
+  ? ApplyFnToArrayObjectsResult<Item, Output>[]
+  : Output;
+
+export const applyFnToArrayObjects = <Input, Fn extends (arg: never) => unknown>(
+  arraiedData: Input,
+  fn: Fn,
+): ApplyFnToArrayObjectsResult<Input, ReturnType<Fn>> => {
+  if (Array.isArray(arraiedData))
+    return arraiedData.map((data) => applyFnToArrayObjects(data, fn)) as ApplyFnToArrayObjectsResult<
+      Input,
+      ReturnType<Fn>
+    >;
+  return fn(arraiedData as never) as ApplyFnToArrayObjectsResult<Input, ReturnType<Fn>>;
+};

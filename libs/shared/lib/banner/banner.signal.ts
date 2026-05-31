@@ -1,7 +1,5 @@
-import { Public } from "@akanjs/nest";
-import { endpoint, internal, slice } from "@akanjs/signal";
-import { Admin } from "@shared/nest";
-
+import { Admin } from "@libs/shared/srvkit";
+import { endpoint, internal, Public, slice } from "akanjs/signal";
 import * as srv from "../srv";
 
 export class BannerInternal extends internal(srv.banner, () => ({})) {}
@@ -14,4 +12,4 @@ export class BannerSlice extends slice(srv.banner, { guards: { root: Admin, get:
     }),
 })) {}
 
-export class BannerEndpoint extends endpoint(srv.banner, () => ({})) {}
+export class BannerEndpoint extends endpoint(srv.banner, ({ pubsub, query, mutation }) => ({})) {}

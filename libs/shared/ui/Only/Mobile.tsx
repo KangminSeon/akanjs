@@ -1,6 +1,6 @@
 "use client";
-import { st } from "@shared/client";
-import { ReactNode } from "react";
+import { st } from "@libs/shared/client";
+import type { ReactNode } from "react";
 
 interface MobileProps {
   children: ReactNode;

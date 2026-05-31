@@ -1,5 +1,5 @@
-import { dayjs, enumOf, Int } from "@akanjs/base";
-import { via } from "@akanjs/constant";
+import { dayjs, enumOf, Int } from "akanjs/base";
+import { via } from "akanjs/constant";
 
 export class LeaveType extends enumOf("leaveType", ["noReply", "comeback", "unsatisfied", "other"] as const) {}
 

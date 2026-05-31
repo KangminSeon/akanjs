@@ -1,4 +1,4 @@
-import { clsx } from "@akanjs/client";
+import { clsx } from "akanjs/client";
 
 export interface IconProps {
   className?: string;

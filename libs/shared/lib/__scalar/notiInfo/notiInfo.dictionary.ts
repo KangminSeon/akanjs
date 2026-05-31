@@ -1,4 +1,4 @@
-import { scalarDictionary } from "@akanjs/dictionary";
+import { scalarDictionary } from "akanjs/dictionary";
 
 import type { NotiInfo, NotiSetting } from "./notiInfo.constant";
 

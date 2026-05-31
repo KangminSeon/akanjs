@@ -1,4 +1,4 @@
-import { clsx } from "@akanjs/client";
+import { clsx } from "akanjs/client";
 
 interface ItemProps {
   children: any;
@@ -13,9 +13,9 @@ export const Item = ({ children, direction = "right" }: ItemProps) => {
       })}
     >
       <div
-        className={clsx("border-primary absolute left-[-28px] top-[4px] z-10 size-4 rounded-full border-2", {
-          "md:left-auto md:right-[-28px] bg-slate-700": direction === "right",
-          "md:left-[-28px] bg-slate-800": direction === "left",
+        className={clsx("absolute top-[4px] left-[-28px] z-10 size-4 rounded-full border-2 border-primary", {
+          "bg-slate-700 md:right-[-28px] md:left-auto": direction === "right",
+          "bg-slate-800 md:left-[-28px]": direction === "left",
         })}
       />
       {children}

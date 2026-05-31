@@ -1,4 +1,4 @@
-import { modelDictionary } from "@akanjs/dictionary";
+import { modelDictionary } from "akanjs/dictionary";
 
 import type { Setting, SettingInsight } from "./setting.constant";
 import type { SettingFilter } from "./setting.document";
@@ -9,7 +9,7 @@ export const dictionary = modelDictionary(["en", "ko"])
     t(["Setting", "설정"]).desc([
       "Setting is a system setting that is controll and manage the metrics of the system and the service.",
       "설정은 시스템과 서비스의 지표를 제어하고 관리하는 시스템 설정입니다.",
-    ])
+    ]),
   )
   .model<Setting>((t) => ({
     resignupDays: t(["Re-signup Days", "재가입 기간(일)"]).desc([

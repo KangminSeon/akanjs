@@ -1,17 +1,24 @@
-import { dayjs } from "@akanjs/base";
-import { beyond, by, from, into, type SchemaOf } from "@akanjs/document";
-import { hashPassword, isPasswordMatch } from "@shared/nest";
-import { randomString } from "@util/common";
+import {
+  createRefreshSession,
+  hashPassword,
+  isPasswordMatch,
+  revokeRefreshSessionBySid,
+  revokeRefreshSessions,
+  rotateRefreshSession,
+} from "@libs/shared/srvkit";
+import { randomString } from "@libs/util/common";
+import { dayjs } from "akanjs/base";
+import { by, documentQueryHelper, from, into, type SchemaOf } from "akanjs/document";
 
 import * as cnst from "../cnst";
 import type * as db from "../db";
-import { Revert } from "../dict";
+import { Err } from "../dict";
 
 export class UserFilter extends from(cnst.User, (filter) => ({
   query: {
     byStatuses: filter()
       .opt("statuses", [cnst.UserStatus])
-      .query((statuses) => (statuses?.length ? { status: { $in: statuses } } : {})),
+      .query((statuses, q) => (statuses?.length ? { status: q.oneOf(statuses) } : {})),
     byNickname: filter()
       .arg("nickname", String)
       .opt("status", cnst.UserStatus)
@@ -19,19 +26,32 @@ export class UserFilter extends from(cnst.User, (filter) => ({
     byAccountId: filter()
       .arg("accountId", String)
       .opt("statuses", [cnst.UserStatus])
-      .query((accountId, statuses) => ({ accountId, ...(statuses ? { status: { $in: statuses } } : {}) })),
+      .query((accountId, statuses, q) => ({
+        accountId,
+        ...(statuses?.length ? { status: q.oneOf(statuses) } : {}),
+      })),
     byPhone: filter()
       .arg("phone", String)
       .opt("statuses", [cnst.UserStatus])
-      .query((phone, statuses) => ({ phone, ...(statuses ? { status: { $in: statuses } } : {}) })),
+      .query((phone, statuses, q) => ({
+        phone,
+        ...(statuses?.length ? { status: q.oneOf(statuses) } : {}),
+      })),
     byLoginAt: filter()
       .opt("from", Date)
       .opt("to", Date)
       .opt("statuses", [cnst.UserStatus])
-      .query((from, to, statuses) => ({
-        lastLoginAt: { ...(from ? { $gte: from.toDate() } : {}), ...(to ? { $lte: to.toDate() } : {}) },
-        ...(statuses ? { status: { $in: statuses } } : {}),
-      })),
+      .query((from, to, statuses, q) => {
+        const lastLoginAtQuery =
+          from && to
+            ? { lastLoginAt: q.between(from.toDate(), to.toDate()) }
+            : from
+              ? { lastLoginAt: q.gte(from.toDate()) }
+              : to
+                ? { lastLoginAt: q.lte(to.toDate()) }
+                : {};
+        return { ...lastLoginAtQuery, ...(statuses?.length ? { status: q.oneOf(statuses) } : {}) };
+      }),
   },
   sort: {},
 })) {}
@@ -82,6 +102,14 @@ export class User extends by(cnst.User) {
 }
 
 export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
+  static override _onSchema(schema: SchemaOf<UserModel, User>) {
+    schema.pre<User>("save", function (next) {
+      if (this.isModified("images")) {
+        this.imageNum = this.images.length;
+        if (this.profileStatus === "active") this.profileStatus = "prepare";
+      }
+    });
+  }
   async getActiveUser(userId: string) {
     const user = await this.User.pickById(userId);
     if (user.status !== "active") throw new Error("User is not in active status");
@@ -110,32 +138,51 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
     await this.userCache.delete("signToken", userId);
     return true;
   }
+  async createRefreshSession(userId: string, refreshTokenHash: string, expiresAt: Date, userAgent?: string) {
+    return await createRefreshSession(this.userCache, {
+      subject: "user",
+      subjectId: userId,
+      refreshTokenHash,
+      expiresAt,
+      userAgent,
+    });
+  }
+  async rotateRefreshSession(refreshTokenHash: string, nextRefreshTokenHash: string, nextExpiresAt: Date) {
+    return await rotateRefreshSession(this.userCache, refreshTokenHash, nextRefreshTokenHash, nextExpiresAt);
+  }
+  async revokeRefreshSession(userId: string, sessionId?: string) {
+    await revokeRefreshSessionBySid(this.userCache, "user", userId, sessionId);
+  }
+  async revokeRefreshSessions(userId: string) {
+    await revokeRefreshSessions(this.userCache, "user", userId);
+  }
   async getAccountId<Throw extends boolean = true>(
     userId: string,
-    throwError: Throw = true as Throw
+    throwError: Throw = true as Throw,
   ): Promise<Throw extends true ? string : string | null> {
     const accountId = (await this.User.pickById(userId, { accountId: true })).accountId;
     if (!accountId && throwError) throw new Error("No Account Id");
     return accountId as Throw extends true ? string : string | null;
   }
   async setAccountIdInPrepareUser(userId: string, accountId: string, resignupDays = 0) {
+    const q = documentQueryHelper;
     const userExists = await this.existsByAccountId(accountId, ["active", "dormant", "restricted"]);
     if (userExists) throw new Error("AccountId already exists");
-    const inactiveUser = await this.User.findOne({ accountId, removedAt: { $exists: true } }).sort({ createdAt: -1 });
+    const inactiveUser = await this.User.findOne(q.all({ accountId }, q.exists("removedAt"))).sort({ createdAt: -1 });
     const isSignable = inactiveUser ? inactiveUser.createdAt.isBefore(dayjs().subtract(resignupDays, "day")) : true;
     if (!isSignable) throw new Error(`Retry after ${resignupDays} days`);
-    await this.User.updateMany({ accountId, status: "prepare" }, { $unset: { accountId: "" } });
+    await this.User.updateMany({ accountId, status: "prepare" }, { unset: { accountId: "" } });
     const modifiedCount = await this.User.updateOne(
-      { _id: userId },
-      { $set: { accountId }, $pull: { verifies: "password" } }
+      { id: userId },
+      { set: { accountId }, pull: { verifies: "password" } },
     );
     return !!modifiedCount;
   }
   async setAccountIdInActiveUser(userId: string, accountId: string) {
     const userExists = await this.existsByAccountId(accountId, ["active", "dormant", "restricted"]);
     if (userExists) throw new Error("AccountId already exists");
-    await this.User.updateMany({ accountId, status: "prepare" }, { $unset: { accountId: "" } });
-    const modifiedCount = await this.User.updateOne({ _id: userId }, { $set: { accountId } });
+    await this.User.updateMany({ accountId, status: "prepare" }, { unset: { accountId: "" } });
+    const modifiedCount = await this.User.updateOne({ id: userId }, { set: { accountId } });
     return !!modifiedCount;
   }
   async setPasswordInPrepareUser(userId: string, accountId: string, password: string) {
@@ -143,8 +190,8 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
     if (!existingAccountId) throw new Error("No accountId in this user");
     if (existingAccountId !== accountId) throw new Error("Invalid accountId");
     const modifiedCount = await this.User.updateOne(
-      { _id: userId },
-      { $set: { password: await hashPassword(password) }, $addToSet: { verifies: "password" } }
+      { id: userId },
+      { set: { password: await hashPassword(password) }, addToSet: { verifies: "password" } },
     );
     return !!modifiedCount;
   }
@@ -152,18 +199,18 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
     const auth = (await this.findByAccountId(accountId, ["active", "dormant", "restricted"], {
       select: { accountId: true, password: true },
     })) as { accountId: string; password: string } | null;
-    if (!auth) throw new Revert("user.error.noAccount");
+    if (!auth) throw new Err("user.error.noAccount");
     if (!auth.accountId) throw new Error("No accountId in this user");
     if (!auth.password) throw new Error("No password in this user");
     const isMatched = await isPasswordMatch(password, auth.password);
-    if (!isMatched) throw new Revert("user.error.wrongPassword");
+    if (!isMatched) throw new Err("user.error.wrongPassword");
     const user = await this.pickByAccountId(accountId);
     return user;
   }
   async setPasswordInActiveUser(userId: string, password: string) {
     const modifiedCount = await this.User.updateOne(
-      { _id: userId },
-      { $set: { password: await hashPassword(password) }, $addToSet: { verifies: "password" } }
+      { id: userId },
+      { set: { password: await hashPassword(password) }, addToSet: { verifies: "password" } },
     );
     return !!modifiedCount;
   }
@@ -180,14 +227,14 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
     const auth = (await this.User.pickById(userId, { accountId: true })) as { accountId?: string };
     if (!auth.accountId) throw new Error("No accountId in this user");
     if (auth.accountId !== accountId) throw new Error("Invalid accountId");
-    const { modifiedCount } = await this.User.updateOne({ _id: userId }, { $addToSet: { verifies: ssoType } });
+    const { modifiedCount } = await this.User.updateOne({ id: userId }, { addToSet: { verifies: ssoType } });
     return !!modifiedCount;
   }
   async subSso(userId: string, accountId: string, ssoType: cnst.SsoType["value"]) {
     const auth = (await this.User.pickById(userId, { accountId: true })) as { accountId?: string };
     if (!auth.accountId) throw new Error("No accountId in this user");
     if (auth.accountId !== accountId) throw new Error("Invalid accountId");
-    const { modifiedCount } = await this.User.updateOne({ _id: userId }, { $pull: { verifies: ssoType } });
+    const { modifiedCount } = await this.User.updateOne({ id: userId }, { pull: { verifies: ssoType } });
     return !!modifiedCount;
   }
   async getUserBySso(accountId: string, ssoType: cnst.SsoType["value"]) {
@@ -222,19 +269,20 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
       ? existingPhoneCodesStr.split(",").map((str) => str.split(":") as [string, string, string])
       : [];
     const existingPhoneCode = existingPhoneCodes.find(
-      ([p, pu, code]) => p === phone && pu === purpose && code === phoneCode
+      ([p, pu, code]) => p === phone && pu === purpose && code === phoneCode,
     );
     if (!existingPhoneCode) return false;
     await this.userCache.delete("phoneCodes", userId);
     return true;
   }
   async setPhoneInPrepareUser(userId: string, phone: string, resignupDays = 0) {
+    const q = documentQueryHelper;
     const userExists = await this.existsByPhone(phone, ["active", "dormant", "restricted"]);
     if (userExists) throw new Error("Phone already exists");
-    const inactiveUser = await this.User.findOne({ phone, removedAt: { $exists: true } }).sort({ createdAt: -1 });
+    const inactiveUser = await this.User.findOne(q.all({ phone }, q.exists("removedAt"))).sort({ createdAt: -1 });
     const isSignable = inactiveUser ? inactiveUser.createdAt.isBefore(dayjs().subtract(resignupDays, "day")) : true;
     if (!isSignable) throw new Error(`Retry after ${resignupDays} days`);
-    const { modifiedCount } = await this.User.updateOne({ _id: userId }, { $set: { phone } });
+    const { modifiedCount } = await this.User.updateOne({ id: userId }, { set: { phone } });
     return !!modifiedCount;
   }
   async verifyPhoneInPrepareUser(userId: string, phone: string) {
@@ -244,10 +292,10 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
     const auth = (await this.User.pickById(userId, { phone: true })) as { phone?: string };
     if (auth.phone !== phone) throw new Error("Invalid phone number");
 
-    await this.User.updateMany({ phone, status: "prepare" }, { $unset: { phone: "" }, $pull: { verifies: "phone" } });
+    await this.User.updateMany({ phone, status: "prepare" }, { unset: { phone: "" }, pull: { verifies: "phone" } });
     const { modifiedCount } = await this.User.updateOne(
-      { _id: userId },
-      { $set: { phone }, $addToSet: { verifies: "phone" } }
+      { id: userId },
+      { set: { phone }, addToSet: { verifies: "phone" } },
     );
     return !!modifiedCount;
   }
@@ -256,27 +304,28 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
     if (auth.phone === phone) throw new Error("Already set the same phone number");
     const userExists = await this.existsByPhone(phone, ["active", "dormant", "restricted"]);
     if (userExists) throw new Error("Phone already exists");
-    await this.User.updateMany({ phone, status: "prepare" }, { $unset: { phone: "" }, $pull: { verifies: "phone" } });
+    await this.User.updateMany({ phone, status: "prepare" }, { unset: { phone: "" }, pull: { verifies: "phone" } });
     const { modifiedCount } = await this.User.updateOne(
-      { _id: userId },
-      { $set: { phone }, $addToSet: { verifies: "phone" } }
+      { id: userId },
+      { set: { phone }, addToSet: { verifies: "phone" } },
     );
     return !!modifiedCount;
   }
 
   async setSsoInPrepareUser(userId: string, accountId: string, ssoType: cnst.SsoType["value"], resignupDays = 0) {
+    const q = documentQueryHelper;
     const userExists = await this.existsByAccountId(accountId, ["active", "dormant", "restricted"]);
     if (userExists) throw new Error("AccountId already exists");
-    const inactiveUser = await this.User.findOne({ accountId, removedAt: { $exists: true } }).sort({ createdAt: -1 });
+    const inactiveUser = await this.User.findOne(q.all({ accountId }, q.exists("removedAt"))).sort({ createdAt: -1 });
     const isSignable = inactiveUser ? inactiveUser.createdAt.isBefore(dayjs().subtract(resignupDays, "day")) : true;
     if (!isSignable) throw new Error(`Retry after ${resignupDays} days`);
     await this.User.updateMany(
       { accountId, status: "prepare" },
-      { $unset: { accountId: "" }, $pull: { verifies: ssoType } }
+      { unset: { accountId: "" }, pull: { verifies: ssoType } },
     );
     const modifiedCount = await this.User.updateOne(
-      { _id: userId },
-      { $set: { accountId }, $addToSet: { verifies: ssoType } }
+      { id: userId },
+      { set: { accountId }, addToSet: { verifies: ssoType } },
     );
     return !!modifiedCount;
   }
@@ -289,38 +338,38 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
     return user;
   }
   async setName(userId: string, name: string) {
-    const { modifiedCount } = await this.User.updateOne({ _id: userId }, { $set: { name } });
+    const { modifiedCount } = await this.User.updateOne({ id: userId }, { set: { name } });
     return !!modifiedCount;
   }
   async setNickname(userId: string, nickname: string) {
-    const { modifiedCount } = await this.User.updateOne({ _id: userId }, { $set: { nickname } });
+    const { modifiedCount } = await this.User.updateOne({ id: userId }, { set: { nickname } });
     return !!modifiedCount;
   }
   async setAppliedImages(userId: string, appliedImages: string[]) {
-    const { modifiedCount } = await this.User.updateOne({ _id: userId }, { $set: { appliedImages } });
+    const { modifiedCount } = await this.User.updateOne({ id: userId }, { set: { appliedImages } });
     return !!modifiedCount;
   }
   async setAgreePolicies(userId: string, agreePolicies: string[]) {
-    const { modifiedCount } = await this.User.updateOne({ _id: userId }, { $set: { agreePolicies } });
+    const { modifiedCount } = await this.User.updateOne({ id: userId }, { set: { agreePolicies } });
     return !!modifiedCount;
   }
   async setDiscord(userId: string, discord: { nickname?: string; user?: { username: string } }) {
-    const { modifiedCount } = await this.User.updateOne({ _id: userId }, { $set: { discord } });
+    const { modifiedCount } = await this.User.updateOne({ id: userId }, { set: { discord } });
     return !!modifiedCount;
   }
   async setNotiSetting(userId: string, notiSetting: cnst.NotiSetting["value"]) {
-    const { modifiedCount } = await this.User.updateOne({ _id: userId }, { $set: { "notiInfo.setting": notiSetting } });
+    const { modifiedCount } = await this.User.updateOne({ id: userId }, { set: { "notiInfo.setting": notiSetting } });
     return !!modifiedCount;
   }
   async addNotiDeviceToken(userId: string, token: string) {
     const { modifiedCount } = await this.User.updateOne(
-      { _id: userId },
-      { $addToSet: { "notiInfo.deviceTokens": token } }
+      { id: userId },
+      { addToSet: { "notiInfo.deviceTokens": token } },
     );
     return !!modifiedCount;
   }
   async subNotiDeviceToken(userId: string, token: string) {
-    const { modifiedCount } = await this.User.updateOne({ _id: userId }, { $pull: { "notiInfo.deviceTokens": token } });
+    const { modifiedCount } = await this.User.updateOne({ id: userId }, { pull: { "notiInfo.deviceTokens": token } });
     return !!modifiedCount;
   }
   async getRestrictInfo(userId: string) {
@@ -331,15 +380,15 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
   }
   async restrict(userId: string, reason: string, until = dayjs().add(1, "year")) {
     const { modifiedCount } = await this.User.updateOne(
-      { _id: userId },
-      { $set: { "restrictInfo.reason": reason, "restrictInfo.until": until.toDate() } }
+      { id: userId },
+      { set: { "restrictInfo.reason": reason, "restrictInfo.until": until.toDate() } },
     );
     return !!modifiedCount;
   }
   async release(userId: string) {
     const { modifiedCount } = await this.User.updateOne(
-      { _id: userId },
-      { $unset: { "restrictInfo.reason": "", "restrictInfo.until": "" } }
+      { id: userId },
+      { unset: { "restrictInfo.reason": "", "restrictInfo.until": "" } },
     );
     return !!modifiedCount;
   }
@@ -351,15 +400,15 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
   }
   async setJourney(userId: string, journey: cnst.Journey["value"], journeyAt = dayjs()) {
     const { modifiedCount } = await this.User.updateOne(
-      { _id: userId },
-      { $set: { "encourageInfo.journey": journey, "encourageInfo.journeyAt": journeyAt.toDate() } }
+      { id: userId },
+      { set: { "encourageInfo.journey": journey, "encourageInfo.journeyAt": journeyAt.toDate() } },
     );
     return !!modifiedCount;
   }
   async setInquiry(userId: string, inquiry: cnst.Inquiry["value"], inquiryAt = dayjs()) {
     const { modifiedCount } = await this.User.updateOne(
-      { _id: userId },
-      { $set: { "encourageInfo.inquiry": inquiry, "encourageInfo.inquiryAt": inquiryAt.toDate() } }
+      { id: userId },
+      { set: { "encourageInfo.inquiry": inquiry, "encourageInfo.inquiryAt": inquiryAt.toDate() } },
     );
     return !!modifiedCount;
   }
@@ -368,18 +417,5 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
   }
   async getRemoteAuthToken(remoteId: string) {
     return await this.userCache.get<string>("remoteAuthToken", remoteId);
-  }
-}
-
-export class UserMiddleware extends beyond(UserModel, User) {
-  onSchema(schema: SchemaOf<UserModel, User>) {
-    schema.pre<User>("save", function (next) {
-      if (this.isModified("images")) {
-        this.imageNum = this.images.length;
-        // if (["approved", "reserved", "rejected"].includes(this.profileStatus)) this.profileStatus = "applied";
-        if (this.profileStatus === "active") this.profileStatus = "prepare";
-      }
-      next();
-    });
   }
 }

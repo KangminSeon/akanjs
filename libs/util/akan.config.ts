@@ -1,4 +1,4 @@
-import type { LibConfig } from "@akanjs/config";
+import type { LibConfig } from "akanjs";
 
 const config: LibConfig = {};
 

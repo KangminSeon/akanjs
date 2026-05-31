@@ -1,6 +1,6 @@
 "use client";
+import type { cnst } from "@libs/util/client";
 import { OVERLAY_MOUSE_TARGET, OverlayViewF } from "@react-google-maps/api";
-import type { cnst } from "@util/client";
 
 interface MarkerProps {
   coordinate: cnst.Coordinate;

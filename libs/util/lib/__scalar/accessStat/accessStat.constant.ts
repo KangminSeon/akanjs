@@ -1,5 +1,5 @@
-import { Int } from "@akanjs/base";
-import { via } from "@akanjs/constant";
+import { Int } from "akanjs/base";
+import { via } from "akanjs/constant";
 
 export class AccessStat extends via((field) => ({
   request: field(Int, { default: 0 }),

@@ -1,4 +1,4 @@
-import { modelDictionary } from "@akanjs/dictionary";
+import { modelDictionary } from "akanjs/dictionary";
 
 import type { Banner, BannerInsight, BannerStatus, BannerTarget } from "./banner.constant";
 import type { BannerFilter } from "./banner.document";
@@ -9,7 +9,7 @@ export const dictionary = modelDictionary(["en", "ko"])
     t(["Banner", "배너"]).desc([
       "Banner is a temporary notice informations that is displayed on the top or in front of the page",
       "배너는 페이지 상단이나 앞에 표시되는 임시 공지 정보입니다.",
-    ])
+    ]),
   )
   .model<Banner>((t) => ({
     category: t(["Category", "카테고리"]).desc([

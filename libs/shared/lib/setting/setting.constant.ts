@@ -1,5 +1,5 @@
-import { Int } from "@akanjs/base";
-import { via } from "@akanjs/constant";
+import { Int } from "akanjs/base";
+import { via } from "akanjs/constant";
 
 export class SettingInput extends via((field) => ({
   resignupDays: field(Int, { default: 0 }),

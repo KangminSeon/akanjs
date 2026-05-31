@@ -1,4 +1,4 @@
-import { beyond, by, from, into, type SchemaOf } from "@akanjs/document";
+import { by, from, into } from "akanjs/document";
 
 import * as cnst from "../cnst";
 
@@ -14,9 +14,3 @@ export class BannerFilter extends from(cnst.Banner, (filter) => ({
 export class Banner extends by(cnst.Banner) {}
 
 export class BannerModel extends into(Banner, BannerFilter, cnst.banner, () => ({})) {}
-
-export class BannerMiddleware extends beyond(BannerModel, Banner) {
-  onSchema(schema: SchemaOf<BannerModel, Banner>) {
-    // schema.index({ status: 1 })
-  }
-}

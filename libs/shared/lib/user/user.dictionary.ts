@@ -1,4 +1,4 @@
-import { modelDictionary } from "@akanjs/dictionary";
+import { modelDictionary } from "akanjs/dictionary";
 
 import type { ProfileStatus, User, UserInsight, UserRole, UserStatus, Verify } from "./user.constant";
 import type { UserFilter } from "./user.document";
@@ -9,7 +9,7 @@ export const dictionary = modelDictionary(["en", "ko"])
     t(["User", "유저"]).desc([
       "User is an public information of the user who uses the service. It can be displayed to other users.",
       "유저는 서비스를 이용하는 사용자의 공개 정보입니다. 다른 사용자에게 표시될 수 있습니다.",
-    ])
+    ]),
   )
   .model<User>((t) => ({
     nickname: t(["Nickname", "닉네임"]).desc([

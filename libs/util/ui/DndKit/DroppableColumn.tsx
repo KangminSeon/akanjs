@@ -1,11 +1,11 @@
 "use client";
 
-import { DragEndEvent, DragOverEvent, useDndMonitor, useDroppable } from "@dnd-kit/core";
+import { type DragEndEvent, type DragOverEvent, useDndMonitor, useDroppable } from "@dnd-kit/core";
 import { arrayMove, rectSortingStrategy, SortableContext } from "@dnd-kit/sortable";
 import { clsx } from "clsx";
-import { ReactNode, useContext, useEffect, useState } from "react";
+import { type ReactNode, useContext, useEffect, useState } from "react";
 
-import { DragEmpty } from "./DragEmpty";
+import DragEmpty from "./DragEmpty";
 import { ItemsContext } from "./Provider";
 import { isMyColumn, mergeOverItems } from "./util";
 
@@ -33,7 +33,7 @@ interface DroppableColumnProps<
   onEnd?: (id: string, item: T[number], event: DragEndEvent) => void;
 }
 
-export function DroppableColumn<T extends { id: string }[]>({
+export default function DroppableColumn<T extends { id: string }[]>({
   id,
   items,
   className,
@@ -133,7 +133,7 @@ export function DroppableColumn<T extends { id: string }[]>({
         over &&
         isMyColumn(
           overId,
-          items.map((i) => i.id)
+          items.map((i) => i.id),
         )
       ) {
         const activeItems = itemsMap[activeItemId].items;
@@ -163,11 +163,11 @@ export function DroppableColumn<T extends { id: string }[]>({
       <div
         ref={setNodeRef}
         className={clsx(
-          "border-base-content relative h-full rounded-md border-[0.5px] p-2",
+          "relative h-full rounded-md border-[0.5px] border-base-content p-2",
           {
-            "bg-primary/10 border-primary border duration-300": isOver,
+            "border border-primary bg-primary/10 duration-300": isOver,
           },
-          className
+          className,
         )}
       >
         {children}

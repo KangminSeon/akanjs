@@ -1,5 +1,5 @@
 "use client";
-import { type cnst, st } from "@util/client";
+import { type cnst, st } from "@libs/util/client";
 import { useEffect } from "react";
 
 import Marker from "./Marker";

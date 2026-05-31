@@ -1,8 +1,8 @@
-import { dayjs, enumOf, Int } from "@akanjs/base";
-import { via } from "@akanjs/constant";
-import { getQueryMeta } from "@shared/common";
+import { getQueryMeta } from "@libs/shared/common";
+import { dayjs, enumOf, Int } from "akanjs/base";
+import { via } from "akanjs/constant";
 
-import { UserFilter } from "../user/user.document";
+import type { UserFilter } from "../user/user.document";
 
 export class SummaryStatus extends enumOf("summaryStatus", ["active", "archived"]) {}
 
@@ -25,42 +25,42 @@ export class SummaryObject extends via(SummaryInput, (field) => ({
   prepareUser: field(Int, { default: 0 }).meta(
     getQueryMeta<UserFilter>("user")
       .query("byStatuses")
-      .args([["prepare"]])
+      .args([["prepare"]]),
   ),
   activeUser: field(Int, { default: 0 }).meta(
     getQueryMeta<UserFilter>("user")
       .query("byStatuses")
-      .args([["active"]])
+      .args([["active"]]),
   ),
   dormantUser: field(Int, { default: 0 }).meta(
     getQueryMeta<UserFilter>("user")
       .query("byStatuses")
-      .args([["dormant"]])
+      .args([["dormant"]]),
   ),
   restrictedUser: field(Int, { default: 0 }).meta(
     getQueryMeta<UserFilter>("user")
       .query("byStatuses")
-      .args([["restricted"]])
+      .args([["restricted"]]),
   ),
   hau: field(Int, { default: 0 }).meta(
     getQueryMeta<UserFilter>("user")
       .query("byLoginAt")
-      .args(() => [dayjs().subtract(1, "hour")])
+      .args(() => [dayjs().subtract(1, "hour")]),
   ),
   dau: field(Int, { default: 0 }).meta(
     getQueryMeta<UserFilter>("user")
       .query("byLoginAt")
-      .args(() => [dayjs().subtract(1, "day")])
+      .args(() => [dayjs().subtract(1, "day")]),
   ),
   wau: field(Int, { default: 0 }).meta(
     getQueryMeta<UserFilter>("user")
       .query("byLoginAt")
-      .args(() => [dayjs().subtract(1, "week")])
+      .args(() => [dayjs().subtract(1, "week")]),
   ),
   mau: field(Int, { default: 0 }).meta(
     getQueryMeta<UserFilter>("user")
       .query("byLoginAt")
-      .args(() => [dayjs().subtract(1, "month")])
+      .args(() => [dayjs().subtract(1, "month")]),
   ),
 })) {}
 

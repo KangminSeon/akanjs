@@ -1,7 +1,7 @@
 "use client";
-import { dayjs } from "@akanjs/base";
-import { st } from "@shared/client";
-import { Field } from "@shared/ui";
+import { st } from "@libs/shared/client";
+import { Field } from "@libs/shared/ui";
+import { dayjs } from "akanjs/base";
 import { useEffect } from "react";
 
 export const HourlyPeriodRange = () => {

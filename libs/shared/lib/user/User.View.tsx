@@ -1,7 +1,7 @@
-import { clsx } from "@akanjs/client";
-import { Image } from "@akanjs/ui";
-import { cnst, usePage, User } from "@shared/client";
-import { Icon } from "@util/ui";
+import { type cnst, User, usePage } from "@libs/shared/client";
+import { Icon } from "@libs/util/ui";
+import { clsx } from "akanjs/client";
+import { Image } from "akanjs/ui";
 
 interface UserViewProps {
   className?: string;
@@ -33,7 +33,7 @@ export const General = ({ className, user, siteKey }: UserViewProps) => {
       ) : null}
       {user.phone?.length ? (
         <div>
-          <div className="text-2xl font-bold">{l("user.phone")}</div>
+          <div className="font-bold text-2xl">{l("user.phone")}</div>
           <p className="pt-2 pl-2 text-lg">{user.phone}</p>
         </div>
       ) : null}
@@ -73,8 +73,8 @@ export const Discord = ({ className, imageUrl, joinUrl, user }: DiscordProps) =>
       </div>
       <div className="rounded-2xl border border-gray-500 p-4 text-center">
         <div className="mb-1 flex flex-col">
-          <p className="mb-2 text-2xl font-light text-gray-400">Not Connected</p>
-          <p className="text-x mb-4 font-light whitespace-pre text-gray-400">
+          <p className="mb-2 font-light text-2xl text-gray-400">Not Connected</p>
+          <p className="mb-4 whitespace-pre font-light text-gray-400 text-x">
             Join our Discord and
             <br />
             link your Discord account!

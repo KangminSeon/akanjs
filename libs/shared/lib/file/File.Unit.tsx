@@ -1,6 +1,6 @@
-import { ModelProps } from "@akanjs/client";
+import type { ModelProps } from "akanjs/client";
 
-import * as cnst from "../cnst";
+import type * as cnst from "../cnst";
 
 export const Card = ({ file }: ModelProps<"file", cnst.LightFile>) => {
   return (

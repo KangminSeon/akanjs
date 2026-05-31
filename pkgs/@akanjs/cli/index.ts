@@ -1,27 +1,26 @@
-#!/usr/bin/env node
-/* eslint-disable */
-import dotenv from "dotenv";
-import { runCommands } from "@akanjs/devkit";
-import { ApplicationCommand } from "./src/application/application.command";
-import { CloudCommand } from "./src/cloud/cloud.command";
-import { LibraryCommand } from "./src/library/library.command";
-import { ModuleCommand } from "./src/module/module.command";
-import { PackageCommand } from "./src/package/package.command";
-import { PageCommand } from "./src/page/page.command";
-import { WorkspaceCommand } from "./src/workspace/workspace.command";
-import { GuidelineCommand } from "./src/guideline/guideline.command";
-import { ScalarCommand } from "./src/scalar/scalar.command";
+#!/usr/bin/env bun
 
-dotenv.config({ path: `${process.cwd()}/.env` });
+import { runCommands } from "@akanjs/devkit";
+import { ApplicationCommand } from "./application/application.command";
+import { CloudCommand } from "./cloud/cloud.command";
+import { GuidelineCommand } from "./guideline/guideline.command";
+import { LibraryCommand } from "./library/library.command";
+import { LocalRegistryCommand } from "./localRegistry/localRegistry.command";
+import { ModuleCommand } from "./module/module.command";
+import { PackageCommand } from "./package/package.command";
+import { PageCommand } from "./page/page.command";
+import { ScalarCommand } from "./scalar/scalar.command";
+import { WorkspaceCommand } from "./workspace/workspace.command";
 
 void runCommands(
   WorkspaceCommand,
   ApplicationCommand,
   LibraryCommand,
+  LocalRegistryCommand,
   PackageCommand,
   ModuleCommand,
   PageCommand,
   CloudCommand,
   GuidelineCommand,
-  ScalarCommand
+  ScalarCommand,
 );

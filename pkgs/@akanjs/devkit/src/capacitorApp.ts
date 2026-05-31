@@ -1,10 +1,9 @@
-import { capitalize } from "@akanjs/common";
-import type { AppExecutor } from "@akanjs/devkit";
-import { CapacitorConfig } from "@capacitor/cli";
+import { type AppExecutor, FileSys } from "@akanjs/devkit";
+import type { CapacitorConfig } from "@capacitor/cli";
 import { MobileProject } from "@trapezedev/project";
 import type { AndroidProject } from "@trapezedev/project/dist/android/project";
 import type { IosProject } from "@trapezedev/project/dist/ios/project";
-import fs from "fs";
+import { capitalize } from "akanjs/common";
 
 import { FileEditor } from "./fileEditor";
 
@@ -28,11 +27,13 @@ export class CapacitorApp {
   async init() {
     const project = this.project as MobileProject;
     await this.project.load();
-    if (!project.android) {
+    const hasAndroid = await FileSys.fileExists(`${this.app.cwdPath}/android/app/build.gradle`);
+    const hasIos = await FileSys.fileExists(`${this.app.cwdPath}/ios/App/App.xcodeproj/project.pbxproj`);
+    if (!project.android && !hasAndroid) {
       await this.app.spawn("npx", ["cap", "add", "android"]);
       await this.project.load();
     }
-    if (!project.ios) {
+    if (!project.ios && !hasIos) {
       await this.app.spawn("npx", ["cap", "add", "ios"]);
       await this.project.load();
     }
@@ -42,7 +43,7 @@ export class CapacitorApp {
     await this.project.commit();
   }
   async #prepareIos() {
-    const isAdded = fs.existsSync(`${this.app.cwdPath}/ios/App/Podfile`);
+    const isAdded = await FileSys.fileExists(`${this.app.cwdPath}/ios/App/App.xcodeproj/project.pbxproj`);
     if (!isAdded) {
       await this.app.spawn("npx", ["cap", "add", "ios"]);
       await this.app.spawn("npx", ["@capacitor/assets", "generate"]);
@@ -74,22 +75,10 @@ export class CapacitorApp {
     await this.project.commit();
     await this.app.spawn(
       "npx",
-      [
-        "cross-env",
-        `APP_OPERATION_MODE=${operation}`,
-        `NEXT_PUBLIC_ENV=${host}`,
-        "npx",
-        "cap",
-        "run",
-        "ios",
-        "--live-reload",
-        operation === "release" ? "" : "--live-reload",
-        operation === "release" ? "" : "--port",
-        operation === "release" ? "" : "4201",
-      ],
+      ["cross-env", `APP_OPERATION_MODE=${operation}`, `BUN_PUBLIC_ENV=${host}`, "npx", "cap", "run", "ios"],
       {
         stdio: "inherit",
-      }
+      },
     );
 
     // this.project.ios.incrementBuild("App", "Debug");
@@ -97,7 +86,7 @@ export class CapacitorApp {
   }
 
   async #prepareAndroid() {
-    const isAdded = fs.existsSync(`${this.app.cwdPath}/android/app/build.gradle`);
+    const isAdded = await Bun.file(`${this.app.cwdPath}/android/app/build.gradle`).exists();
     if (!isAdded) {
       await this.app.spawn("npx", ["cap", "add", "android"]);
     } else this.app.verbose(`Android already added, skip adding process`);
@@ -105,10 +94,10 @@ export class CapacitorApp {
     await this.app.spawn("npx", ["cap", "sync", "android"]);
   }
 
-  #updateAndroidBuildTypes() {
+  async #updateAndroidBuildTypes() {
     //keystore 기본 설정 및 debug, release 설정
 
-    const appGradle = new FileEditor(`${this.app.cwdPath}/android/app/build.gradle`);
+    const appGradle = await FileEditor.create(`${this.app.cwdPath}/android/app/build.gradle`);
     const buildTypesBlock = `
       debug {
         applicationIdSuffix ".debug"
@@ -141,11 +130,11 @@ export class CapacitorApp {
     if (appGradle.find(`applicationIdSuffix ".debug"`) === -1) {
       appGradle.insertAfter("buildTypes {", buildTypesBlock);
     }
-    appGradle.save();
+    await appGradle.save();
   }
   async buildAndroid(assembleType: "apk" | "aab") {
     await this.#prepareAndroid();
-    this.#updateAndroidBuildTypes();
+    await this.#updateAndroidBuildTypes();
     //윈도우는 gradlew.bat 사용
     const isWindows = process.platform === "win32";
     const gradleCommand = isWindows ? "gradlew.bat" : "./gradlew";
@@ -177,21 +166,10 @@ export class CapacitorApp {
     this.app.logger.info(`Running Android in ${operation} mode on ${host} host`);
     await this.app.spawn(
       "npx",
-      [
-        "cross-env",
-        `NEXT_PUBLIC_ENV=${host}`,
-        `APP_OPERATION_MODE=${operation}`,
-        "npx",
-        "cap",
-        "run",
-        "android",
-        operation === "release" ? "" : "--live-reload",
-        operation === "release" ? "" : "--port",
-        operation === "release" ? "" : "4201",
-      ],
+      ["cross-env", `BUN_PUBLIC_ENV=${host}`, `APP_OPERATION_MODE=${operation}`, "npx", "cap", "run", "android"],
       {
         stdio: "inherit",
-      }
+      },
     );
   }
 
@@ -206,7 +184,7 @@ export class CapacitorApp {
   }
   async releaseIos() {
     //TODO: 작업 필요
-    const isAdded = fs.existsSync(`${this.app.cwdPath}/ios/App/Podfile`);
+    const isAdded = await Bun.file(`${this.app.cwdPath}/ios/App/App.xcodeproj/project.pbxproj`).exists();
     if (!isAdded) {
       await this.app.spawn("npx cap add ios");
       await this.app.spawn("npx @capacitor/assets generate");
@@ -215,7 +193,7 @@ export class CapacitorApp {
   }
   async releaseAndroid() {
     //TODO: 작업 필요
-    const isAdded = fs.existsSync(`${this.app.cwdPath}/android/app/build.gradle`);
+    const isAdded = await Bun.file(`${this.app.cwdPath}/android/app/build.gradle`).exists();
     if (!isAdded) {
       await this.app.spawn("npx cap add android");
       await this.app.spawn("npx @capacitor/assets generate");
@@ -246,7 +224,7 @@ export class CapacitorApp {
   }
   async #setPermissionInIos(permissions: { [key: string]: string }) {
     const updateNs = Object.fromEntries(
-      Object.entries(permissions).map(([key, value]) => [`NS${capitalize(key)}`, value])
+      Object.entries(permissions).map(([key, value]) => [`NS${capitalize(key)}`, value]),
     );
     await Promise.all([
       this.project.ios.updateInfoPlist(this.iosTargetName, "Debug", updateNs),

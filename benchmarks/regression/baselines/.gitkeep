@@ -1,0 +1,4 @@
+# Baseline snapshots live here, one per <target>__<scenario>.json.
+# Create/refresh with: bun regression/check.ts --run <runId> --update
+# Commit baselines you want CI to gate against. raw-bun__rest_minimal_ping.json is a
+# committed example so the regression checker has something to compare against out of the box.

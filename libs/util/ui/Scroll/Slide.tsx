@@ -1,6 +1,6 @@
 "use client";
 import clsx from "clsx";
-import { type ReactNode, useContext } from "react";
+import { type ReactNode, useCallback, useContext } from "react";
 
 import { ScrollContext } from "./context";
 import { Render } from "./Render";
@@ -8,28 +8,27 @@ import { Render } from "./Render";
 interface SlideProps {
   id: string;
   title?: ReactNode;
-  children: any;
+  children: ReactNode;
   className?: string;
   preClassName?: string;
   postClassName?: string;
 }
 export const Slide = ({ id, title, children, className, preClassName, postClassName }: SlideProps) => {
-  const { setSlide, slideIds } = useContext(ScrollContext);
+  const { registerSlideElement } = useContext(ScrollContext);
+  const setSlideElement = useCallback(
+    (element: HTMLDivElement | null) => {
+      registerSlideElement(id, element);
+    },
+    [id, registerSlideElement],
+  );
+
   return (
     <Render
       id={id}
       className={clsx("", className)}
       preClassName={preClassName}
       postClassName={postClassName}
-      onRendered={() => {
-        setSlide(id);
-      }}
-      onHidden={(direction) => {
-        const slideIdx = slideIds.findIndex((slideId) => slideId === id);
-        const targetSlideIdx =
-          direction === "up" ? Math.max(slideIdx - 1, 0) : Math.min(slideIdx + 1, slideIds.length - 1);
-        setSlide(slideIds[targetSlideIdx]);
-      }}
+      elementRef={setSlideElement}
     >
       {children}
     </Render>

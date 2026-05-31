@@ -1,6 +1,6 @@
 "use client";
-import { clsx } from "@akanjs/client";
-import { useEffect, useRef } from "react";
+import { clsx } from "akanjs/client";
+import { type ReactNode, useEffect, useRef } from "react";
 
 interface CodeInputProps {
   unitStyle?: "box" | "underline";
@@ -25,14 +25,14 @@ export const CodeInput = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const defaultUnitClassName =
     unitStyle === "box" ? "border border-gray-300 rounded-sm items-center" : "border-b border-gray-300 items-end pb-2";
-  const Box = ({ indexNum, children }) => {
+  const Box = ({ indexNum, children }: { indexNum: number; children: ReactNode }) => {
     return (
       <div
         className={clsx(
-          "flex h-16 w-full justify-center  text-2xl duration-150",
+          "flex h-16 w-full justify-center text-2xl duration-150",
           defaultUnitClassName,
           unitClassName,
-          indexNum === value.length ? "border-primary" : "border-gray-300"
+          indexNum === value.length ? "border-primary" : "border-gray-300",
         )}
       >
         {children}
@@ -48,7 +48,7 @@ export const CodeInput = ({
   }, [value]);
 
   return (
-    <div className={clsx("relative   flex items-center  justify-center gap-2", className)}>
+    <div className={clsx("relative flex items-center justify-center gap-2", className)}>
       {Array(maxNum)
         .fill("")
         .map((_, i) => {
@@ -70,7 +70,7 @@ export const CodeInput = ({
           if (e.target.value.length > maxNum) return;
           onChange(e.target.value);
         }}
-        className={`absolute size-full border-none text-transparent caret-transparent  outline-hidden focus:outline-hidden`}
+        className={`absolute size-full border-none text-transparent caret-transparent outline-hidden focus:outline-hidden`}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import { serviceDictionary } from "@akanjs/dictionary";
+import { serviceDictionary } from "akanjs/dictionary";
 
 import type { LocalFileEndpoint } from "./localFile.signal";
 

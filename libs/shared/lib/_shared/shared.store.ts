@@ -1,15 +1,15 @@
-import { router, setAuth } from "@akanjs/client";
-import { Logger } from "@akanjs/common";
-import { LoginForm } from "@akanjs/next";
-import { store } from "@akanjs/store";
+import { router, setAuth } from "akanjs/client";
+import { Logger } from "akanjs/common";
+import { store } from "akanjs/store";
+import type { LoginForm } from "akanjs/webkit";
 
 import * as cnst from "../cnst";
 import type { RootStore } from "../st";
 import { fetch } from "../useClient";
 
-export class SharedStore extends store("shared" as const, {
+export class SharedStore extends store("shared" as const, () => ({
   // state
-}) {
+})) {
   async login({ auth, redirect, unauthorize, jwt }: LoginForm) {
     if (jwt) setAuth({ jwt });
     try {
@@ -27,7 +27,7 @@ export class SharedStore extends store("shared" as const, {
   async logout() {
     const { jwt } = await fetch.signoutUser();
     setAuth({ jwt });
-    (this as unknown as RootStore).set({ me: cnst.admin.getDefault() as cnst.Admin, self: cnst.user.getDefault() });
+    (this as unknown as RootStore).set({ me: new cnst.Admin(), self: new cnst.User() });
     void (this as unknown as RootStore).getSelf({ jwt });
     router.refresh();
   }

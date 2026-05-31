@@ -1,6 +1,6 @@
 "use client";
-import { useFetch } from "@akanjs/next";
-import { cnst, st } from "@shared/client";
+import { cnst, st } from "@libs/shared/client";
+import { useFetch } from "akanjs/webkit";
 import { useEffect } from "react";
 
 interface BridgeProps {
@@ -14,8 +14,8 @@ export const Bridge = ({ mePromise, selfPromise }: BridgeProps) => {
   useEffect(() => {
     if (!meFullfilled || !selfFullfilled) return;
     st.set({
-      ...(me ? { me: cnst.admin.crystalize(me as cnst.Admin) } : {}),
-      ...(self ? { self: cnst.user.crystalize(self as cnst.User) } : {}),
+      ...(me ? { me: new cnst.Admin().set(me as cnst.Admin) } : {}),
+      ...(self ? { self: new cnst.User().set(self as cnst.User) } : {}),
     });
   }, [meFullfilled, selfFullfilled]);
   return null;

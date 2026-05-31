@@ -1,6 +1,6 @@
 "use client";
-import type { cnst } from "@util/client";
-import { st } from "@util/client";
+import type { cnst } from "@libs/util/client";
+import { st } from "@libs/util/client";
 
 interface FocusProps {
   className?: string;

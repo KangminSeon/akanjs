@@ -26,11 +26,11 @@ apps/*/scripts
 **/kubeconfig.yaml
 **/secrets.*
 **/.idea
-apps/**/src/schema.gql
 .next
 .vite
 dump
 local
+**/tsconfig.tsbuildinfo
 
 # Xcode
 build/
@@ -71,7 +71,7 @@ local.properties
 **/public/worker-*.js.map
 **/public/fallback-*.js
 **/public/libs
-**/assets/libs
+**/private/libs
 
 **/vendor/bundle/
 **/ios/App/App/public
@@ -83,8 +83,6 @@ local.properties
 **/akan.app.json
 **/akan.lib.json
 **/akan.pkg.json
-**/next.config.ts
-**/next-env.d.ts
 apps/**/lib/__lib
 libs/**/lib/__lib
 apps/*/lib/cnst.ts
@@ -95,6 +93,12 @@ apps/*/lib/st.ts
 apps/*/lib/sig.ts
 apps/*/lib/useClient.ts
 apps/*/lib/useServer.ts
+apps/*/ui/index.ts
+apps/*/webkit/index.ts
+apps/*/srvkit/index.ts
+apps/*/common/index.ts
+apps/*/lib/*/index.ts
+apps/*/lib/__scalar/*/index.ts
 apps/*/client.ts
 apps/*/server.ts
 apps/*/lib/*/index.tsx
@@ -106,20 +110,24 @@ libs/*/lib/st.ts
 libs/*/lib/sig.ts
 libs/*/lib/useClient.ts
 libs/*/lib/useServer.ts
+libs/*/ui/index.ts
+libs/*/webkit/index.ts
+libs/*/srvkit/index.ts
+libs/*/common/index.ts
+libs/*/lib/*/index.ts
+libs/*/lib/__scalar/*/index.ts
 libs/*/client.ts
 libs/*/server.ts
 libs/*/index.ts
 libs/*/lib/*/index.tsx
 # **/capacitor.config.ts
-# **/postcss.config.js
 # **/playwright.config.ts
-# **/jest.config.ts
-# **/next-env.d.ts
 # **/tsconfig.json
 # **/tsconfig.spec.json
 
-**/akansoft-id
-**/akansoft-id.pub
+**/bunkan-id
+**/bunkan-id.pub
+infra/master/jenkins/credentials.sh
 **/.jenkins.conf
 **/regcred.yaml
 **/mongo-connections.json
@@ -127,4 +135,5 @@ libs/*/lib/*/index.tsx
 infra/master/createRecords.ts
 **/abi
 pkgs/contract/env.ts
-pnpm-lock.yaml
+**/.akan
+**/bun.lock

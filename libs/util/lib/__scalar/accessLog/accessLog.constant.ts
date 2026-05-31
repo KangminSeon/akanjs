@@ -1,5 +1,5 @@
-import { dayjs, Int } from "@akanjs/base";
-import { via } from "@akanjs/constant";
+import { dayjs, Int } from "akanjs/base";
+import { via } from "akanjs/constant";
 
 import { Coordinate } from "../coordinate/coordinate.constant";
 

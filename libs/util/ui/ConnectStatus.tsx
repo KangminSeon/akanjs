@@ -1,4 +1,4 @@
-import { clsx } from "@akanjs/client";
+import { clsx } from "akanjs/client";
 
 interface ConnectStatusProps {
   className?: string;
@@ -32,7 +32,7 @@ export const ConnectStatus = ({
             "bg-gray-300": conn === "disconnected",
             [disconnectedClassName ?? ""]: conn === "disconnected",
           },
-          className
+          className,
         )}
       />
       {conn !== "disconnected" ? (

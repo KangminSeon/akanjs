@@ -1,7 +1,7 @@
 "use client";
-import { Layout } from "@akanjs/ui";
-import { st, usePage } from "@shared/client";
-import { Field } from "@shared/ui";
+import { st, usePage } from "@libs/shared/client";
+import { Field } from "@libs/shared/ui";
+import { Layout } from "akanjs/ui";
 
 interface FileEditProps {
   className?: string;

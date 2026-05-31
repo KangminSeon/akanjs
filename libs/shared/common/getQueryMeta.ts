@@ -1,8 +1,8 @@
-import { ExtractQuery, FilterInfo, FilterInstance } from "@akanjs/document";
+import type { ExtractQuery, FilterInfo, FilterInstance } from "akanjs/document";
 
 export class QueryMeta<Filter extends FilterInstance = any, Key = string, Args extends any[] = []> {
   refName: string;
-  queryKey: Key;
+  queryKey: Key | null = null;
   queryArgs: Args | (() => Args);
 
   constructor(refName: string) {

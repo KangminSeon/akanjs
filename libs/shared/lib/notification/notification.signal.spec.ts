@@ -1,11 +1,11 @@
-import { sampleOf } from "@akanjs/test";
-import * as userSpec from "@shared/lib/user/user.signal.spec";
+import type * as userSpec from "@libs/shared/lib/user/user.signal.spec";
+import { sampleOf } from "akanjs/test";
 
 import * as cnst from "../cnst";
 
 export const createNotification = async (
   adminAgent: userSpec.AdminAgent,
-  userAgent: userSpec.UserAgent
+  _userAgent?: userSpec.UserAgent,
 ): Promise<cnst.Notification> => {
   const notificationInput = sampleOf(cnst.NotificationInput);
   const notification = await adminAgent.fetch.createNotification(notificationInput);

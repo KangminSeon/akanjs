@@ -2,7 +2,8 @@ export const validate = {
   phone: (phone: string) => {
     return phone.split("-").length === 3;
   },
-  email: (email: string) => {
+  email: (email: string | null | undefined) => {
+    if (!email) return false;
     if (email.split("@").length !== 2) return false;
     else if (email.split(".").length === 1) return false;
     else return true;

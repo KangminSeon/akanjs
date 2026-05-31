@@ -1,5 +1,5 @@
-import { dayjs, enumOf } from "@akanjs/base";
-import { via } from "@akanjs/constant";
+import { dayjs, enumOf } from "akanjs/base";
+import { via } from "akanjs/constant";
 
 export class NotiSetting extends enumOf("notiSetting", ["disagree", "fewer", "normal", "block"]) {}
 

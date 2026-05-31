@@ -1,0 +1,4 @@
+/** Uppercases only the first character of a string. */
+export const capitalize = (str: string) => {
+  return str.charAt(0).toUpperCase() + str.slice(1);
+};

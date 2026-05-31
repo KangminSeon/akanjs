@@ -1,4 +1,4 @@
-import { scalarDictionary } from "@akanjs/dictionary";
+import { scalarDictionary } from "akanjs/dictionary";
 
 import type { EncourageInfo, Inquiry, Journey } from "./encourageInfo.constant";
 

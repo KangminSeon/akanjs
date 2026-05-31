@@ -1,4 +1,4 @@
-import { modelDictionary } from "@akanjs/dictionary";
+import { modelDictionary } from "akanjs/dictionary";
 
 import type { PeriodType, Summary, SummaryInsight, SummaryStatus } from "./summary.constant";
 import type { SummaryFilter } from "./summary.document";
@@ -9,7 +9,7 @@ export const dictionary = modelDictionary(["en", "ko"])
     t(["Summary", "시스템 요약"]).desc([
       "Summary is a group of system and service metrics that is used for the system to be monitored and managed.",
       "Summary는 시스템이 모니터링되고 관리되는 데 사용되는 시스템 및 서비스 지표의 그룹입니다.",
-    ])
+    ]),
   )
   .model<Summary>((t) => ({
     type: t(["Type", "타입"]).desc([

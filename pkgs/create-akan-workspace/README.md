@@ -7,12 +7,12 @@ The quickest way to bootstrap a new Akan.js workspace with a single command. Thi
 The fastest way to create a new Akan.js workspace:
 
 ```bash
-npx create-akan-workspace
+bunx create-akan-workspace
 ```
 
 That's it! This single command will:
 
-1. Install the latest `@akanjs/cli` globally
+1. Install the latest `akanjs` globally
 2. Run the interactive workspace creation wizard
 3. Set up your development environment
 
@@ -20,13 +20,13 @@ That's it! This single command will:
 
 ```bash
 # Interactive mode (recommended)
-npx create-akan-workspace
+bunx create-akan-workspace
 
 # Specify organization name
-npx create-akan-workspace "my-company"
+bunx create-akan-workspace "my-company"
 
 # Full setup with options
-npx create-akan-workspace "my-company" --app "web-app" --dir "./projects"
+bunx create-akan-workspace "my-company" --app "web-app" --dir "./projects"
 ```
 
 ## 📋 Options
@@ -57,8 +57,7 @@ Navigate to http://localhost:4200 to see your app running!
 
 ## 🛠️ Requirements
 
-- **Node.js** >=20.x
-- **pnpm** >=10.x
+- **Bun.js** >=1.3
 
 ## 🔗 What's Next?
 
@@ -77,7 +76,7 @@ akan build <app-name>
 
 ## 📚 Learn More
 
-- [`@akanjs/cli`](../cli) - Full CLI documentation and features
+- [`akanjs`](../akanjs) - Full CLI documentation and features
 - [Akan.js Documentation](https://docs.akanjs.com) - Complete development guide
 - [Examples](https://github.com/akan-team/examples) - Sample projects and tutorials
 

@@ -1,5 +1,5 @@
-import { enumOf } from "@akanjs/base";
-import { via } from "@akanjs/constant";
+import { enumOf } from "akanjs/base";
+import { via } from "akanjs/constant";
 
 import { File } from "../file/file.constant";
 
@@ -28,7 +28,7 @@ export class NotificationObject extends via(NotificationInput, (field) => ({})) 
 export class LightNotification extends via(
   NotificationObject,
   ["type", "level", "title"] as const,
-  (resolve) => ({})
+  (resolve) => ({}),
 ) {}
 
 export class Notification extends via(NotificationObject, LightNotification, (resolve) => ({})) {}

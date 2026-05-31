@@ -1,0 +1,31 @@
+import { spawn } from "node:child_process";
+import type { Logger } from "akanjs/common";
+
+export const executeCommand = (command: string, logger?: Logger): Promise<{ stdout: string; stderr: string }> => {
+  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    const proc = spawn("sh", ["-c", command], { stdio: "pipe" });
+
+    let stdout = "";
+    let stderr = "";
+
+    proc.stdout.on("data", (data: Buffer) => {
+      logger?.debug(data.toString());
+      stdout += data.toString();
+    });
+    proc.stderr.on("error", (error: Buffer) => {
+      logger?.error(error.toString());
+      stderr += error.toString();
+    });
+
+    proc.on("close", (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+      } else {
+        reject(new Error(`Command failed with code ${code}: ${command}`));
+      }
+    });
+
+    proc.on("error", reject);
+    return { stdout, stderr };
+  });
+};

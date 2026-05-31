@@ -1,0 +1,294 @@
+{
+  "name": "akanjs",
+  "version": "2.1.1",
+  "sourceType": "module",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://akanjs.com",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/akan-team/akanjs.git",
+    "directory": "pkgs/akanjs"
+  },
+  "exports": {
+    ".": {
+      "import": "./index.ts",
+      "types": "./index.ts",
+      "default": "./index.ts"
+    },
+    "./package.json": "./package.json",
+    "./base": {
+      "import": "./base/index.ts",
+      "types": "./base/index.ts",
+      "default": "./base/index.ts"
+    },
+    "./common": {
+      "import": "./common/index.ts",
+      "types": "./common/index.ts",
+      "default": "./common/index.ts"
+    },
+    "./common/*": "./common/*",
+    "./fetch": {
+      "import": "./fetch/index.ts",
+      "types": "./fetch/index.ts",
+      "default": "./fetch/index.ts"
+    },
+    "./document": {
+      "import": "./document/index.ts",
+      "types": "./document/index.ts",
+      "default": "./document/index.ts"
+    },
+    "./signal": {
+      "import": "./signal/index.ts",
+      "types": "./signal/index.ts",
+      "default": "./signal/index.ts"
+    },
+    "./store": {
+      "import": "./store/index.ts",
+      "types": "./store/index.ts",
+      "default": "./store/index.ts"
+    },
+    "./ui": {
+      "import": "./ui/index.ts",
+      "types": "./ui/index.ts",
+      "default": "./ui/index.ts"
+    },
+    "./ui/*": "./ui/*",
+    "./client": {
+      "import": "./client/index.ts",
+      "types": "./client/index.ts",
+      "default": "./client/index.ts"
+    },
+    "./client/capacitor": {
+      "import": "./client/capacitor.ts",
+      "types": "./client/capacitor.ts",
+      "default": "./client/capacitor.ts"
+    },
+    "./capacitor.base.config": {
+      "import": "./capacitor.base.config.ts",
+      "types": "./capacitor.base.config.ts",
+      "default": "./capacitor.base.config.ts"
+    },
+    "./webkit": {
+      "import": "./webkit/index.ts",
+      "types": "./webkit/index.ts",
+      "default": "./webkit/index.ts"
+    },
+    "./webkit/*": "./webkit/*",
+    "./server": {
+      "import": "./server/index.ts",
+      "types": "./server/index.ts",
+      "default": "./server/index.ts"
+    },
+    "./service": {
+      "import": "./service/index.ts",
+      "types": "./service/index.ts",
+      "default": "./service/index.ts"
+    },
+    "./constant": {
+      "import": "./constant/index.ts",
+      "types": "./constant/index.ts",
+      "default": "./constant/index.ts"
+    },
+    "./dictionary": {
+      "import": "./dictionary/index.ts",
+      "types": "./dictionary/index.ts",
+      "default": "./dictionary/index.ts"
+    },
+    "./test": {
+      "import": "./test/index.ts",
+      "types": "./test/index.ts",
+      "default": "./test/index.ts"
+    },
+    "./ui/styles.css": "./ui/styles.css",
+    "./server/rsc-worker": {
+      "import": "./server/rscWorker.tsx",
+      "types": "./server/rscWorker.tsx",
+      "default": "./server/rscWorker.tsx"
+    }
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "dayjs": "^1.11.20",
+    "immer": "^11.1.8",
+    "sharp": "^0.34.5"
+  },
+  "peerDependencies": {
+    "@capacitor-community/contacts": "^7.2.0",
+    "@capacitor-community/fcm": "^8.1.0",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/browser": "^8.0.3",
+    "@capacitor/camera": "^8.2.0",
+    "@capacitor/cli": "^8.3.4",
+    "@capacitor/core": "^8.3.4",
+    "@capacitor/device": "^8.0.2",
+    "@capacitor/geolocation": "^8.2.0",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/keyboard": "^8.0.3",
+    "@capacitor/preferences": "^8.0.1",
+    "@capacitor/push-notifications": "^8.1.1",
+    "@capgo/capacitor-updater": "^8.46.1",
+    "@libsql/client": "^0.17.3",
+    "@playwright/test": "^1.60.0",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@react-spring/web": "^10.1.0",
+    "@use-gesture/react": "^10.3.1",
+    "bullmq": "^5.76.10",
+    "capacitor-plugin-safe-area": "^5.0.0",
+    "chance": "^1.1.13",
+    "cordova-plugin-purchase": "^13.16.0",
+    "croner": "^10.0.1",
+    "daisyui": "^5.5.20",
+    "ioredis": "^5.10.1",
+    "mermaid": "^11.15.0",
+    "postgres": "^3.4.9",
+    "protobufjs": "^8.4.0",
+    "react": "19.2.6",
+    "react-datepicker": "^9.1.0",
+    "react-dom": "19.2.6",
+    "react-icons": "^5.6.0",
+    "react-refresh": "^0.18.0",
+    "react-server-dom-webpack": "^19.2.6",
+    "react-simple-pull-to-refresh": "^1.3.4",
+    "react-spring": "^10.0.4",
+    "scheduler": "^0.27.0",
+    "sharp": "^0.34.5",
+    "tailwind-scrollbar": "^4.0.2",
+    "typescript": "^6.0.3"
+  },
+  "peerDependenciesMeta": {
+    "@capacitor-community/contacts": {
+      "optional": true
+    },
+    "@capacitor-community/fcm": {
+      "optional": true
+    },
+    "@capacitor/app": {
+      "optional": true
+    },
+    "@capacitor/browser": {
+      "optional": true
+    },
+    "@capacitor/camera": {
+      "optional": true
+    },
+    "@capacitor/cli": {
+      "optional": true
+    },
+    "@capacitor/core": {
+      "optional": true
+    },
+    "@capacitor/device": {
+      "optional": true
+    },
+    "@capacitor/geolocation": {
+      "optional": true
+    },
+    "@capacitor/haptics": {
+      "optional": true
+    },
+    "@capacitor/keyboard": {
+      "optional": true
+    },
+    "@capacitor/preferences": {
+      "optional": true
+    },
+    "@capacitor/push-notifications": {
+      "optional": true
+    },
+    "@capgo/capacitor-updater": {
+      "optional": true
+    },
+    "@libsql/client": {
+      "optional": true
+    },
+    "@playwright/test": {
+      "optional": true
+    },
+    "@radix-ui/react-dialog": {
+      "optional": true
+    },
+    "@react-spring/web": {
+      "optional": true
+    },
+    "@use-gesture/react": {
+      "optional": true
+    },
+    "bullmq": {
+      "optional": true
+    },
+    "capacitor-plugin-safe-area": {
+      "optional": true
+    },
+    "chance": {
+      "optional": true
+    },
+    "cordova-plugin-purchase": {
+      "optional": true
+    },
+    "croner": {
+      "optional": true
+    },
+    "daisyui": {
+      "optional": true
+    },
+    "ioredis": {
+      "optional": true
+    },
+    "mermaid": {
+      "optional": true
+    },
+    "postgres": {
+      "optional": true
+    },
+    "protobufjs": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-datepicker": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    },
+    "react-icons": {
+      "optional": true
+    },
+    "react-refresh": {
+      "optional": true
+    },
+    "react-server-dom-webpack": {
+      "optional": true
+    },
+    "react-simple-pull-to-refresh": {
+      "optional": true
+    },
+    "react-spring": {
+      "optional": true
+    },
+    "scheduler": {
+      "optional": true
+    },
+    "tailwind-scrollbar": {
+      "optional": true
+    },
+    "typescript": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.4",
+    "@types/bun": "^1.3.14"
+  },
+  "bun": {
+    "platform": "bun"
+  },
+  "engines": {
+    "bun": ">=1.3.13"
+  }
+}

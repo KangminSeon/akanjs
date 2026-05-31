@@ -1,4 +1,4 @@
-import { serviceDictionary } from "@akanjs/dictionary";
+import { serviceDictionary } from "akanjs/dictionary";
 
 import type { SecurityEndpoint } from "./security.signal";
 

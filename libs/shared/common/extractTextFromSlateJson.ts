@@ -1,19 +1,17 @@
-import type { TDescendant, TElement, TText } from "@udecode/plate-common";
+export type SlateJson = any[];
 
-export type SlateJson = TDescendant[];
-
-export const extractTextFromSlateJson = (nodes: TDescendant[]): string => {
+export const extractTextFromSlateJson = (nodes: any[]): string => {
   return nodes
-    .map((node: TElement | { text?: string }) => {
+    .map((node: any | { text?: string }) => {
       // If the node is a text node, return its text content
       if ((node as { text?: string }).text !== undefined) {
-        return (node as TText).text;
+        return (node as any).text;
       }
 
       if (!(node as { children?: unknown }).children) return "";
       // For non-text nodes (elements), recursively process their children
 
-      const elementNode = node as TElement;
+      const elementNode = node as any;
       const childText = extractTextFromSlateJson(elementNode.children);
 
       // Handle specific element types

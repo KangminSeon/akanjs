@@ -1,0 +1,11 @@
+export const FIELD_META = Symbol.for("akanjs.field");
+export const SLICE_META = Symbol.for("akanjs.slice");
+export const FILTER_META = Symbol.for("akanjs.filter");
+export const LOADER_META = Symbol.for("akanjs.loader");
+export const INJECT_META = Symbol.for("akanjs.inject");
+export const ENDPOINT_META = Symbol.for("akanjs.endpoint");
+export const INTERNAL_META = Symbol.for("akanjs.internal");
+export const STATE_META = Symbol.for("akanjs.state");
+export const STATE_INIT_META = Symbol.for("akanjs.state.init");
+export const STATE_DERIVED_META = Symbol.for("akanjs.state.derived");
+export const ACTION_META = Symbol.for("akanjs.action");

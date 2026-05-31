@@ -1,4 +1,4 @@
-import { scalarDictionary } from "@akanjs/dictionary";
+import { scalarDictionary } from "akanjs/dictionary";
 
 import type { RestrictInfo } from "./restrictInfo.constant";
 

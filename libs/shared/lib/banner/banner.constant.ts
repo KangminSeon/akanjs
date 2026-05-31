@@ -1,5 +1,5 @@
-import { dayjs, enumOf } from "@akanjs/base";
-import { via } from "@akanjs/constant";
+import { dayjs, enumOf } from "akanjs/base";
+import { via } from "akanjs/constant";
 
 import { File } from "../file/file.constant";
 
@@ -25,7 +25,7 @@ export class BannerObject extends via(BannerInput, (field) => ({
 export class LightBanner extends via(
   BannerObject,
   ["category", "title", "content", "image", "from", "to", "href", "target", "status"] as const,
-  (resolve) => ({})
+  (resolve) => ({}),
 ) {}
 
 export class Banner extends via(BannerObject, LightBanner, (resolve) => ({})) {}

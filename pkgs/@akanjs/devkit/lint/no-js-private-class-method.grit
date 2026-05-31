@@ -1,0 +1,42 @@
+engine biome(1.0)
+language js(typescript, jsx)
+
+or {
+  JsMethodClassMember() as $method where {
+    $method <: contains JsPrivateClassMemberName() as $name,
+    $method <: r"async\s+#",
+    $method <: contains `async` as $asyncToken,
+    $name <: r"#(.*)"($bareName),
+    $privateName = join(list = ["_", $bareName], separator = ""),
+    register_diagnostic(
+      span = $method,
+      message = "JavaScript private class methods (#) should not be used in mixin-enabled modules. Use a TypeScript private method with an underscore prefix instead.",
+      severity = "error"
+    ),
+    $asyncToken => `private async`,
+    $name => $privateName
+  },
+  JsMethodClassMember() as $method where {
+    $method <: contains JsPrivateClassMemberName() as $name,
+    not $method <: r"async\s+#",
+    $name <: r"#(.*)"($bareName),
+    $privateName = join(list = ["private _", $bareName], separator = ""),
+    register_diagnostic(
+      span = $method,
+      message = "JavaScript private class methods (#) should not be used in mixin-enabled modules. Use a TypeScript private method with an underscore prefix instead.",
+      severity = "error"
+    ),
+    $name => $privateName
+  },
+  JsCallExpression() as $call where {
+    $call <: contains JsPrivateName() as $name,
+    $name <: r"#(.*)"($bareName),
+    $privateName = join(list = ["_", $bareName], separator = ""),
+    register_diagnostic(
+      span = $call,
+      message = "Calls to JavaScript private class methods (#) should use the underscore-prefixed TypeScript private method.",
+      severity = "error"
+    ),
+    $name => $privateName
+  }
+}

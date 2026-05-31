@@ -1,0 +1,122 @@
+.line-number {
+  display: inline-block;
+  width: 2.5em;
+  margin-right: 1em;
+  text-align: right;
+  color: #6e7681;
+  user-select: none;
+}
+
+/* Diff styles */
+.shiki .code-diff {
+  display: inline-block;
+  width: 100%;
+}
+
+.shiki .code-diff.code-add {
+  background-color: rgba(46, 160, 67, 0.2);
+}
+
+.shiki .code-diff.code-add::before {
+  content: "+";
+  position: absolute;
+  left: 0.5rem;
+  color: #3fb950;
+}
+
+.shiki .code-diff.code-remove {
+  background-color: rgba(248, 81, 73, 0.2);
+}
+
+.shiki .code-diff.code-remove::before {
+  content: "-";
+  position: absolute;
+  left: 0.5rem;
+  color: #f85149;
+}
+
+/* Highlight styles */
+.shiki .highlighted {
+  display: inline-block;
+  width: 100%;
+  background-color: rgba(136, 136, 136, 0.2);
+}
+
+/* Container needs relative position for diff markers */
+.shiki code {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.shiki .line {
+  position: relative;
+}
+
+/* Collapsed sections */
+.collapsed-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.collapsed-section .collapsed-lines {
+  display: none;
+}
+
+.collapsed-section.expanded .collapsed-lines {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Collapsed state - blue (click to expand) */
+.expand-btn {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0;
+  height: 0.75em;
+  font-size: inherit;
+  background: rgba(88, 166, 255, 0.1);
+  border: none;
+  border-left: 2px solid #7c7c7c;
+  color: #7c7c7c;
+  cursor: pointer;
+  position: relative;
+  opacity: 0.5;
+}
+
+.expand-btn:hover {
+  background: rgba(88, 166, 255, 0.15);
+}
+
+.expand-btn .expand-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5em;
+  margin-right: 1em;
+  color: #7c7c7c;
+}
+
+.expand-btn:hover .expand-icon {
+  color: #a1a1a1;
+}
+
+/* Expanded state - red (click to collapse) */
+.collapsed-section.expanded .expand-btn {
+  background: rgba(248, 81, 73, 0.1);
+  border-left-color: #f85149;
+  color: #f85149;
+}
+
+.collapsed-section.expanded .expand-btn:hover {
+  background: rgba(248, 81, 73, 0.15);
+}
+
+.collapsed-section.expanded .expand-btn .expand-icon {
+  color: #f85149;
+}
+
+.collapsed-section.expanded .expand-btn:hover .expand-icon {
+  color: #ff7b72;
+}

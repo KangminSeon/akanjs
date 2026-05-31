@@ -1,8 +1,15 @@
 "use client";
-import { clsx } from "@akanjs/client";
-import { cnst } from "@util";
+import { cnst } from "@libs/util";
+import { clsx } from "akanjs/client";
 import { Map, type PigeonProps as PigeonLibProps, ZoomControl } from "pigeon-maps";
-import { CSSProperties, MouseEventHandler, PropsWithChildren, useContext, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type MouseEventHandler,
+  type PropsWithChildren,
+  useContext,
+  useRef,
+  useState,
+} from "react";
 
 import { MapViewContext, PigeonMapPropsContext } from "./context";
 
@@ -20,7 +27,7 @@ export interface PigeonProps {
   onChangeBounds?: (bounds: { minLat: number; maxLat: number; minLng: number; maxLng: number }) => void;
   mouseEvents?: boolean;
   onMouseMove?: (coordinate: cnst.Coordinate) => void;
-  mapTiler?: (x: number, y: number, z: number, dpr: number) => string;
+  mapTiler?: (x: number, y: number, z: number, dpr?: number) => string;
   children?: any;
   zoomControlStyle?: CSSProperties;
   showZoomControl?: boolean;
@@ -31,7 +38,7 @@ export default function Pigeon({
   onLoad,
   onClick,
   onRightClick,
-  center = { type: "Point", coordinates: [127.0016985, 37.5642135], altitude: 0 },
+  center = new cnst.Coordinate().set({ coordinates: [127.0016985, 37.5642135], altitude: 0 }),
   onChangeCenter,
   zoom,
   onChangeZoom,
@@ -58,7 +65,7 @@ export default function Pigeon({
           if (initial) onLoad?.();
           if (zoom !== newZoom) onChangeZoom?.(newZoom);
           if (center.coordinates[0] !== lng || center.coordinates[1] !== lat)
-            onChangeCenter?.(cnst.coordinate.crystalize({ type: "Point", coordinates: [lng, lat], altitude: 0 }));
+            onChangeCenter?.(new cnst.Coordinate().set({ coordinates: [lng, lat], altitude: 0 }));
           if (bounds.minLat !== sw[1] || bounds.maxLat !== ne[1] || bounds.minLng !== sw[0] || bounds.maxLng !== ne[0])
             onChangeBounds?.({ minLat: sw[1], maxLat: ne[1], minLng: sw[0], maxLng: ne[0] });
         }}
@@ -131,7 +138,7 @@ function MouseTracker({
 
     const { pixelToLatLng } = propsRef.current;
     const [lat, lng] = pixelToLatLng?.([x - initialLeft, y - initialTop]) ?? [0, 0];
-    onMouseMove?.(cnst.coordinate.crystalize({ type: "Point", coordinates: [lng, lat], altitude: 0 }), event);
+    onMouseMove?.(new cnst.Coordinate().set({ coordinates: [lng, lat], altitude: 0 }), event);
   };
   const handleClick: MouseEventHandler<HTMLDivElement> = (event) => {
     const x = event.clientX;
@@ -139,10 +146,8 @@ function MouseTracker({
 
     const { pixelToLatLng } = propsRef.current;
     const [lat, lng] = pixelToLatLng?.([x - initialLeft, y - initialTop]) ?? [0, 0];
-    if (event.button === 0)
-      onClick?.(cnst.coordinate.crystalize({ type: "Point", coordinates: [lng, lat], altitude: 0 }), event);
-    if (event.button === 2)
-      onRightClick?.(cnst.coordinate.crystalize({ type: "Point", coordinates: [lng, lat], altitude: 0 }), event);
+    if (event.button === 0) onClick?.(new cnst.Coordinate().set({ coordinates: [lng, lat], altitude: 0 }), event);
+    if (event.button === 2) onRightClick?.(new cnst.Coordinate().set({ coordinates: [lng, lat], altitude: 0 }), event);
   };
 
   return (

@@ -1,6 +1,6 @@
 "use client";
+import { cnst } from "@libs/util/client";
 import { PolylineF } from "@react-google-maps/api";
-import { cnst } from "@util/client";
 
 interface PolylineProps {
   coordinates: cnst.Coordinate[];
@@ -17,11 +17,7 @@ export default function Polyline({
     <PolylineF
       onClick={(e) => {
         if (!options.clickable || !e.latLng) return;
-        const coordinate: cnst.Coordinate = cnst.coordinate.crystalize({
-          type: "Point",
-          coordinates: [e.latLng.lng(), e.latLng.lat()],
-          altitude: 0,
-        });
+        const coordinate = new cnst.Coordinate().set({ coordinates: [e.latLng.lng(), e.latLng.lat()], altitude: 0 });
         onClick?.(coordinate);
       }}
       options={options}

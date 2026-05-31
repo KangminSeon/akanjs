@@ -1,0 +1,36 @@
+debug: 
+  domains: []
+  app:
+    replica: "0,0,1"
+    resources:
+      requests:
+        memory: 250M
+        cpu: "0.05"
+      limits:
+        memory: 1G
+        cpu: "0.5"
+      storage: 2Gi
+develop: 
+  domains: []
+  app:
+    replica: "0,0,1"
+    resources:
+      requests:
+        memory: 250M
+        cpu: "0.05"
+      limits:
+        memory: 1G
+        cpu: "0.5"
+      storage: 2Gi
+main: 
+  domains: []
+  app:
+    replica: "0,0,1"
+    resources:
+      requests:
+        memory: 1G
+        cpu: "1"
+      limits:
+        memory: 4G
+        cpu: "4"
+      storage: 5Gi

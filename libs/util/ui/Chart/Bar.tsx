@@ -3,7 +3,7 @@ import "chartjs-adapter-dayjs-4/dist/chartjs-adapter-dayjs-4.esm";
 
 import type { ChartData, ChartOptions } from "chart.js";
 import { BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Title, Tooltip } from "chart.js";
-import { Bar as BarChart, ChartProps } from "react-chartjs-2";
+import { Bar as BarChart, type ChartProps } from "react-chartjs-2";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 

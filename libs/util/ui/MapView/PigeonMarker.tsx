@@ -1,7 +1,7 @@
 "use client";
-import { clsx } from "@akanjs/client";
-import { cnst } from "@util/client";
-import { Overlay as PigeonMarker, PigeonProps } from "pigeon-maps";
+import type { cnst } from "@libs/util/client";
+import { clsx } from "akanjs/client";
+import { Overlay as PigeonMarker, type PigeonProps } from "pigeon-maps";
 import { useContext, useRef } from "react";
 
 import { PigeonMapPropsContext } from "./context";
@@ -45,7 +45,7 @@ export default function Marker({ className, children, coordinate, onClick, onDra
 
           const delta = Math.sqrt(
             (mouseUpPosition[0] - mouseDownPosition.current[0]) ** 2 +
-              (mouseUpPosition[1] - mouseDownPosition.current[1]) ** 2
+              (mouseUpPosition[1] - mouseDownPosition.current[1]) ** 2,
           );
 
           if (delta < 5) onClick?.();

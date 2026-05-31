@@ -1,0 +1,7 @@
+`$directive` where {
+  $directive <: `"use client"`,
+  register_diagnostic(
+    span = $directive,
+    message = "`use client` should not be used at the top of a server file."
+  )
+}

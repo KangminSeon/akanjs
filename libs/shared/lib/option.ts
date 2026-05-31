@@ -1,8 +1,7 @@
-import { generateHost } from "@akanjs/nest";
-import { Middleware, useGlobals } from "@akanjs/server";
-import { getSsoProviders } from "@shared/nest";
-
-import type { LibOptions } from "./__lib/lib.service";
+import { generateHost } from "@libs/util/srvkit";
+import { AkanOption } from "akanjs/server";
+import { AccountMiddleware, initSsoProviders } from "../srvkit";
+import type { LibOptions } from "./srv";
 
 export interface AccountInfo {
   accountId: string;
@@ -10,17 +9,14 @@ export interface AccountInfo {
 }
 
 export type ModulesOptions = LibOptions & {
-  rootAdminInfo: AccountInfo;
+  rootAdminInfo?: AccountInfo;
 };
 
-export const registerGlobalModule = (options: ModulesOptions) => {
-  return useGlobals({
-    uses: { rootAdminInfo: options.rootAdminInfo },
-    useAsyncs: {},
-    providers: [...getSsoProviders(generateHost(options), options.security.sso)],
-  });
-};
-
-export const registerGlobalMiddlewares = (options: ModulesOptions) => {
-  return [] as Middleware[];
-};
+export const option = new AkanOption<ModulesOptions>()
+  .use((options) => {
+    initSsoProviders(generateHost(options), options.security?.sso ?? {});
+    return {
+      rootAdminInfo: options.rootAdminInfo ?? { accountId: "admin@mydomain.com", password: "admin1234" },
+    };
+  })
+  .applyMiddleware(AccountMiddleware);

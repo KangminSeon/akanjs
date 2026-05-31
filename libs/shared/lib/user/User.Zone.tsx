@@ -1,5 +1,5 @@
 "use client";
-import { st, User } from "@shared/client";
+import { st, User } from "@libs/shared/client";
 
 interface MyDiscordProps {
   className?: string;

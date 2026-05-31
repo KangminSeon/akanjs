@@ -1,10 +1,11 @@
 "use client";
-import { clsx } from "@akanjs/client";
-import { capitalize, pathGet } from "@akanjs/common";
-import { lazy, useInterval } from "@akanjs/next";
-import { Field as AkanField, Modal } from "@akanjs/ui";
-import { cnst, fetch, st, usePage } from "@shared/client";
-import { MapView, Upload } from "@util/ui";
+import { cnst, fetch, st } from "@libs/shared/client";
+import { MapView, Upload } from "@libs/util/ui";
+import { clsx } from "akanjs/client";
+import { capitalize, pathGet } from "akanjs/common";
+import type { SliceMeta } from "akanjs/fetch";
+import { Field as AkanField, Modal } from "akanjs/ui";
+import { lazy, useInterval } from "akanjs/webkit";
 import { memo, type ReactNode, useCallback, useState } from "react";
 import { AiTwotoneEnvironment } from "react-icons/ai";
 
@@ -12,13 +13,14 @@ import { Editor } from "./Editor";
 
 const DaumPostcode = lazy(() => import("react-daum-postcode"), { ssr: false });
 
-interface SlateProps {
+interface RichTextProps {
   label?: string;
   desc?: string;
   labelClassName?: string;
   className?: string;
-  sliceName: string;
+  slice: SliceMeta;
   valuePath: string;
+  value?: unknown;
   onChange: (value: unknown) => void;
   addFile: (file: cnst.File | cnst.File[], options?: { idx?: number; limit?: number }) => void;
   placeholder?: string;
@@ -27,60 +29,52 @@ interface SlateProps {
   onPressEnter?: () => void;
   editorHeight?: string;
 }
-const Slate = memo(
-  ({
+const Yoopta = memo((props: RichTextProps) => {
+  const hasValue = Object.hasOwn(props, "value");
+  const {
     label,
     desc,
     labelClassName,
     className,
-    sliceName,
+    slice,
     valuePath,
+    value,
     onChange,
     addFile,
     placeholder,
     nullable,
     disabled,
-    onPressEnter,
     editorHeight,
-  }: SlateProps) => {
-    const { l } = usePage();
-    const names = {
-      modelForm: `${sliceName}Form`,
-      addModelFiles: `add${capitalize(sliceName)}Files`,
-    };
-    const addModelFiles = fetch[names.addModelFiles] as (fileList: FileList, id?: string) => Promise<cnst.File[]>;
-    return (
-      <div className={clsx("flex flex-col", className)}>
-        {label ? <AkanField.Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
-        {!disabled ? (
-          <Editor.Slate
-            defaultValue={pathGet(valuePath, st.get()[names.modelForm as "adminForm"])}
-            placeholder={placeholder}
-            addFilesGql={addModelFiles}
-            addFile={addFile}
-            onChange={(val) => {
-              onChange(val);
-            }}
-            disabled={disabled}
-            className={clsx("w-full", "")}
-            height={editorHeight}
-          />
-        ) : null}
-      </div>
-    );
-  }
-);
+  } = props;
+  const { sliceName } = slice;
+  const names = {
+    modelForm: `${sliceName}Form`,
+    addModelFiles: `add${capitalize(sliceName)}Files`,
+  };
+  const addModelFiles = (fetch as any)[names.addModelFiles] as (
+    fileList: FileList,
+    id?: string,
+  ) => Promise<cnst.File[]>;
+  return (
+    <div className={clsx("flex flex-col", className)}>
+      {label ? <AkanField.Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
+      <Editor.Yoopta
+        value={hasValue ? value : pathGet(valuePath, st.get()[names.modelForm as "adminForm"])}
+        placeholder={placeholder}
+        addFilesGql={addModelFiles}
+        addFile={addFile}
+        onChange={(val) => {
+          onChange(val);
+        }}
+        disabled={disabled}
+        className={clsx("w-full", "")}
+        height={editorHeight}
+      />
+    </div>
+  );
+});
 
-interface YooptaProps {
-  className?: string;
-  readonly?: boolean;
-  value: object;
-  onChange: (value: any) => void;
-}
-
-const Yoopta = ({ className, readonly, value, onChange }: YooptaProps) => {
-  return <Editor.Yoopta readOnly={readonly} value={value} onChange={onChange} />;
-};
+const Slate = Yoopta;
 
 interface CoordinateProps {
   className?: string;
@@ -159,11 +153,11 @@ const Postcode = ({ className, labelClassName, nullable, kakaoKey, label, desc, 
       })
     ).json()) as { documents?: { x: string; y: string }[] };
     if (!kakaoResp.documents?.[0]) throw new Error("주소를 찾을 수 없습니다.");
-    return {
+    return new cnst.util.Coordinate({
       type: "Point",
       coordinates: [parseFloat(kakaoResp.documents[0].x), parseFloat(kakaoResp.documents[0].y)],
       altitude: 0,
-    };
+    });
   }, []);
   return (
     <>
@@ -210,7 +204,7 @@ interface ImageProps {
   uploadClassName?: string;
   className?: string;
   nullable?: boolean;
-  sliceName: string;
+  slice: SliceMeta;
   value: cnst.File | null;
   render?: (file: cnst.File) => ReactNode;
   onChange: (file: cnst.File | null) => void;
@@ -227,15 +221,19 @@ const Img = ({
   render,
   nullable,
   value,
-  sliceName,
+  slice,
   onChange,
   disabled,
   aspectRatio,
 }: ImageProps) => {
+  const { sliceName } = slice;
   const names = {
     addModelFiles: `add${capitalize(sliceName)}Files`,
   };
-  const addFiles = fetch[names.addModelFiles] as (fileList: FileList | File[], id?: string) => Promise<cnst.File[]>;
+  const addFiles = (fetch as any)[names.addModelFiles] as (
+    fileList: FileList | File[],
+    id?: string,
+  ) => Promise<cnst.File[]>;
   useInterval(async () => {
     if (value?.status !== "uploading") return;
     onChange(await fetch.file(value.id));
@@ -266,7 +264,7 @@ interface ImagesProps {
   desc?: string;
   labelClassName?: string;
   className?: string;
-  sliceName: string;
+  slice: SliceMeta;
   render?: (file: cnst.File) => ReactNode;
   value: cnst.File[];
   onChange: (files: cnst.File[]) => void;
@@ -283,15 +281,19 @@ const Imgs = ({
   render,
   value,
   onChange,
-  sliceName,
+  slice,
   minlength = 1,
   maxlength = 30,
   disabled,
 }: ImagesProps) => {
+  const { sliceName } = slice;
   const names = {
     addModelFiles: `add${capitalize(sliceName)}Files`,
   };
-  const addFiles = fetch[names.addModelFiles] as (fileList: FileList | File[], id?: string) => Promise<cnst.File[]>;
+  const addFiles = (fetch as any)[names.addModelFiles] as (
+    fileList: FileList | File[],
+    id?: string,
+  ) => Promise<cnst.File[]>;
   useInterval(async () => {
     if (!value.length) return;
     const uploadingFiles = value.filter((f) => f.status === "uploading");
@@ -306,13 +308,13 @@ const Imgs = ({
         multiple
         fileList={value}
         disabled={disabled}
-        render={render}
+        render={render as any}
         styleType="square"
         onRemove={(file: File | FileList) => {
           onChange(value.filter((f) => f.id !== (file as unknown as cnst.File).id));
         }}
         onSave={async (file) => {
-          //! Max Length 처리해야함.
+          // TODO: Max Length 처리해야함.
           const files = file instanceof FileList ? await addFiles(file) : await addFiles([file]);
           onChange([...value, ...files]);
         }}
@@ -328,7 +330,7 @@ interface FileProps {
   className?: string;
   uploadClassName?: string;
   render?: (file: cnst.File) => ReactNode;
-  sliceName: string;
+  slice: SliceMeta;
   nullable?: boolean;
   value: cnst.File | null;
   onChange: (file: cnst.File | null) => void;
@@ -344,13 +346,17 @@ const File = ({
   nullable,
   value,
   onChange,
-  sliceName,
+  slice,
   disabled,
 }: FileProps) => {
+  const { sliceName } = slice;
   const names = {
     addModelFiles: `add${capitalize(sliceName)}Files`,
   };
-  const addFiles = fetch[names.addModelFiles] as (fileList: FileList | File[], id?: string) => Promise<cnst.File[]>;
+  const addFiles = (fetch as any)[names.addModelFiles] as (
+    fileList: FileList | File[],
+    id?: string,
+  ) => Promise<cnst.File[]>;
   useInterval(async () => {
     if (value?.status !== "uploading") return;
     onChange(await fetch.file(value.id));
@@ -359,7 +365,7 @@ const File = ({
     <div className={clsx("flex flex-col", className)}>
       {label ? <AkanField.Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Upload.File
-        render={render}
+        render={render as any}
         uploadClassName={uploadClassName}
         disabled={disabled}
         file={value}
@@ -380,7 +386,7 @@ interface FilesProps {
   desc?: string;
   labelClassName?: string;
   className?: string;
-  sliceName: string;
+  slice: SliceMeta;
   render?: (file: cnst.File) => ReactNode;
   value: cnst.File[];
   onChange: (files: cnst.File[]) => void;
@@ -397,15 +403,19 @@ const Files = ({
   render,
   value,
   onChange,
-  sliceName,
+  slice,
   minlength = 1,
   maxlength = 30,
   disabled,
 }: FilesProps) => {
+  const { sliceName } = slice;
   const names = {
     addModelFiles: `add${capitalize(sliceName)}Files`,
   };
-  const addFiles = fetch[names.addModelFiles] as (fileList: FileList | File[], id?: string) => Promise<cnst.File[]>;
+  const addFiles = (fetch as any)[names.addModelFiles] as (
+    fileList: FileList | File[],
+    id?: string,
+  ) => Promise<cnst.File[]>;
   useInterval(async () => {
     if (!value.length) return;
     const uploadingFiles = value.filter((f) => f.status === "uploading");
@@ -419,13 +429,13 @@ const Files = ({
       <Upload.FileList
         multiple
         disabled={disabled}
-        render={render}
+        render={render as any}
         fileList={value}
         onRemove={(file: cnst.File) => {
           onChange(value.filter((f) => f.id !== file.id));
         }}
         onChange={async (file) => {
-          //! Max Length 처리해야함.
+          // TODO: Max Length 처리해야함.
           if (maxlength && value.length + (file instanceof FileList ? file.length : 1) > maxlength) return;
           const files =
             file instanceof FileList ? await addFiles([...(file as File[])]) : await addFiles([file as File]);

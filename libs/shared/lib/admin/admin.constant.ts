@@ -1,6 +1,6 @@
-import { dayjs, enumOf } from "@akanjs/base";
-import { via } from "@akanjs/constant";
-import { validate } from "@util/common";
+import { validate } from "@libs/util/common";
+import { dayjs, enumOf } from "akanjs/base";
+import { via } from "akanjs/constant";
 
 export class AdminRole extends enumOf("adminRole", ["manager", "admin", "superAdmin"] as const) {}
 

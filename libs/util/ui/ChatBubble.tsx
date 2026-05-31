@@ -1,6 +1,6 @@
-import { Dayjs } from "@akanjs/base";
-import { clsx } from "@akanjs/client";
-import { ReactNode } from "react";
+import type { Dayjs } from "akanjs/base";
+import { clsx } from "akanjs/client";
+import type { ReactNode } from "react";
 
 interface ChatBubbleProps {
   className?: string;
@@ -36,11 +36,11 @@ export const ChatBubble = ({
     <div className={clsx("flex w-full gap-2", isMe ? "justify-end" : "justify-start", wrapperClassName)}>
       {avatar && !isMe ? avatar : null}
       <div className={bodyClassName}>
-        <div className={`flex w-full text-xs ${!isMe ? "justify-start" : "justify-end "}`}>
+        <div className={`flex w-full text-xs ${!isMe ? "justify-start" : "justify-end"}`}>
           {name ? <p className="text-sm">{name}</p> : null}
         </div>
         <div className={clsx("flex items-end gap-1", isMe ? "flex-row-reverse" : "flex-row")}>
-          <div className={clsx("bg-base-200 w-full rounded-2xl px-3 py-2", roundingClassName, className)}>
+          <div className={clsx("w-full rounded-2xl bg-base-200 px-3 py-2", roundingClassName, className)}>
             {children}
           </div>
           {at ? (

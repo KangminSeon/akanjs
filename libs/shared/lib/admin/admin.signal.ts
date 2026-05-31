@@ -1,24 +1,46 @@
-import { ID } from "@akanjs/base";
-import { Public } from "@akanjs/nest";
-import { endpoint, internal, slice } from "@akanjs/signal";
-import { Account, Admin, Me, SuperAdmin } from "@shared/nest";
-
+import { Account, Me } from "@libs/shared/srvkit";
+import { ID } from "akanjs/base";
+import { endpoint, internal, Public, Req, slice } from "akanjs/signal";
 import * as cnst from "../cnst";
 import * as srv from "../srv";
 
-export class AdminInternal extends internal(srv.admin, ({ initialize }) => ({
+interface AccessTokenResponse {
+  jwt: string;
+  refreshToken?: string;
+  expiresAt?: unknown;
+}
+
+const makeAccessTokenResponse = (accessToken: AccessTokenResponse) => {
+  return new Response(JSON.stringify(accessToken), {
+    headers: {
+      "Content-Type": "application/json",
+      ...(accessToken.refreshToken
+        ? {
+            "Set-Cookie": `adminRefreshToken=${encodeURIComponent(accessToken.refreshToken)}; Path=/; SameSite=Lax; HttpOnly`,
+          }
+        : {}),
+    },
+  });
+};
+
+const makeSignoutResponse = (accessToken: AccessTokenResponse) => {
+  return new Response(JSON.stringify(accessToken), {
+    headers: {
+      "Content-Type": "application/json",
+      "Set-Cookie": "adminRefreshToken=; Path=/; SameSite=Lax; HttpOnly; Max-Age=0",
+    },
+  });
+};
+
+export class AdminInternal extends internal(srv.admin, ({ initialize, process, resolveField }) => ({
   initializeAdmin: initialize().exec(async function () {
     await this.adminService.initializeAdmin();
   }),
 })) {}
 
-export class AdminSlice extends slice(
-  srv.admin,
-  { guards: { root: Admin, get: Public, cru: SuperAdmin } },
-  () => ({})
-) {}
+export class AdminSlice extends slice(srv.admin, { guards: { root: Public, get: Public, cru: Public } }, () => ({})) {}
 
-export class AdminEndpoint extends endpoint(srv.admin, ({ query, mutation }) => ({
+export class AdminEndpoint extends endpoint(srv.admin, ({ query, mutation, pubsub, message }) => ({
   isAdminSystemInitialized: query(Boolean).exec(async function () {
     return await this.adminService.isAdminSystemInitialized();
   }),
@@ -35,7 +57,7 @@ export class AdminEndpoint extends endpoint(srv.admin, ({ query, mutation }) => 
   setAdminPassword: mutation(Boolean)
     .body("adminId", ID)
     .body("password", String)
-    .with(Me)
+    .with(Me, { nullable: false })
     .exec(async function (adminId, password, me) {
       if (!me.roles.includes("superAdmin") && me.id !== adminId) throw new Error("No Access to set password");
       await this.adminService.setPassword(adminId, password);
@@ -45,20 +67,29 @@ export class AdminEndpoint extends endpoint(srv.admin, ({ query, mutation }) => 
     .body("accountId", String)
     .body("password", String)
     .exec(async function (accountId, password) {
-      return await this.adminService.signinAdmin(accountId, password);
+      return makeAccessTokenResponse(await this.adminService.signinAdmin(accountId, password)) as never;
     }),
   signoutAdmin: mutation(cnst.util.AccessToken)
     .with(Account)
     .exec(async function (account) {
-      return await this.adminService.signoutAdmin(account);
+      return makeSignoutResponse(await this.adminService.signoutAdmin(account)) as never;
+    }),
+  refreshAdminJwt: mutation(cnst.util.AccessToken)
+    .body("refreshToken", String, { nullable: true })
+    .with(Account)
+    .with(Req)
+    .exec(async function (refreshToken, account, request) {
+      const token = refreshToken ?? (request as Bun.BunRequest).cookies.get("adminRefreshToken");
+      if (!token) throw new Error("No refresh token");
+      return makeAccessTokenResponse(await this.adminService.refreshAdminToken(token, account)) as never;
     }),
   addAdminRole: mutation(cnst.Admin)
     .body("adminId", ID)
     .body("role", cnst.AdminRole)
     .with(Me)
     .exec(async function (adminId, role, me) {
-      const level = cnst.AdminRole.findIndex((r) => r === role);
-      if (me.roles.every((adminRole) => cnst.AdminRole.findIndex((r) => r === adminRole) < level))
+      const level = cnst.AdminRole.indexOf(role);
+      if ((me.roles as cnst.AdminRole["value"][]).every((adminRole) => cnst.AdminRole.indexOf(adminRole) < level))
         throw new Error("Not Allowed");
       return await this.adminService.addRole(adminId, role);
     }),
@@ -67,8 +98,8 @@ export class AdminEndpoint extends endpoint(srv.admin, ({ query, mutation }) => 
     .body("role", cnst.AdminRole)
     .with(Me)
     .exec(async function (adminId, role, me) {
-      const level = cnst.AdminRole.findIndex((r) => r === role);
-      if (me.roles.every((adminRole) => cnst.AdminRole.findIndex((r) => r === adminRole) < level))
+      const level = cnst.AdminRole.indexOf(role);
+      if ((me.roles as cnst.AdminRole["value"][]).every((adminRole) => cnst.AdminRole.indexOf(adminRole) < level))
         throw new Error("Not Allowed");
       return await this.adminService.subRole(adminId, role);
     }),

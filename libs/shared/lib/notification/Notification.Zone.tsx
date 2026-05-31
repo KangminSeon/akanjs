@@ -1,8 +1,8 @@
 "use client";
-import { getCookie } from "@akanjs/client";
-// import { FirebaseMessagingOptions, useFirebaseMessaging } from "@shared/client";
-import { st } from "@shared/client";
-import { FirebaseMessagingOptions, useFirebaseMessaging } from "@shared/next";
+// import { FirebaseMessagingOptions, useFirebaseMessaging } from "@libs/shared/client";
+import { st } from "@libs/shared/client";
+import { type FirebaseMessagingOptions, useFirebaseMessaging } from "@libs/shared/webkit";
+import { getCookie } from "akanjs/client";
 import { useEffect } from "react";
 
 interface InitializeProps {

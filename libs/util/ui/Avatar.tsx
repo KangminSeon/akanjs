@@ -1,6 +1,6 @@
-import { clsx } from "@akanjs/client";
-import { Image } from "@akanjs/ui";
-import { ReactNode } from "react";
+import { clsx } from "akanjs/client";
+import { Image } from "akanjs/ui";
+import type { ReactNode } from "react";
 import { AiOutlineUser } from "react-icons/ai";
 
 interface AvatarProps {

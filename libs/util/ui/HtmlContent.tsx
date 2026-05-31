@@ -1,4 +1,4 @@
-import { clsx } from "@akanjs/client";
+import { clsx } from "akanjs/client";
 
 interface HtmlContentProps {
   className?: string;
@@ -8,6 +8,7 @@ interface HtmlContentProps {
 export const HtmlContent = ({ className, content, children }: HtmlContentProps) => {
   const proseClassName = "p-5 prose md:prose-sm lg:prose-base  w-full";
   return content ? (
+    // biome-ignore lint/security/noDangerouslySetInnerHtml: <explanation>
     <div className={clsx(proseClassName, className)} dangerouslySetInnerHTML={{ __html: content }}></div>
   ) : (
     <div className={clsx(proseClassName, className)}>{children}</div>

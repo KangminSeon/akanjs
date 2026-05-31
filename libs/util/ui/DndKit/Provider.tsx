@@ -19,14 +19,14 @@ export interface DndContextType {
 
 export const ItemsContext = createContext<DndContextType>({});
 
-export const Provider = ({ children, className, ...props }: ProviderProps) => {
+export default function Provider({ children, className, ...props }: ProviderProps) {
   const itemsMap = useRef<DndContextType>({});
 
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
-    })
+    }),
   );
 
   return (
@@ -36,4 +36,4 @@ export const Provider = ({ children, className, ...props }: ProviderProps) => {
       </DndContext>
     </ItemsContext.Provider>
   );
-};
+}

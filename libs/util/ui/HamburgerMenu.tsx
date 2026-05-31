@@ -1,5 +1,5 @@
 "use client";
-import { clsx } from "@akanjs/client";
+import { clsx } from "akanjs/client";
 
 interface HamburgerMenuProps {
   isOpen: boolean;
@@ -17,16 +17,16 @@ export const HamburgerMenu = ({ isOpen, setIsOpen, className, color }: Hamburger
   return (
     <button
       className={clsx(
-        "flex flex-col items-center justify-center  rounded-md isolate  transition-all duration-100",
-        className
+        "isolate flex flex-col items-center justify-center rounded-md transition-all duration-100",
+        className,
       )}
       onClick={toggleMenu}
     >
-      <div data-open={isOpen} className="relative h-6 w-8 group">
+      <div data-open={isOpen} className="group relative h-6 w-8">
         {/* 상단 바 */}
         <span
           style={{ backgroundColor: color }}
-          className={clsx("absolute left-0 h-1 w-full rounded-md transition-all  ease-in-out", {
+          className={clsx("absolute left-0 h-1 w-full rounded-md transition-all ease-in-out", {
             "top-2.5 rotate-45": isOpen,
             "top-0": !isOpen,
           })}
@@ -35,7 +35,7 @@ export const HamburgerMenu = ({ isOpen, setIsOpen, className, color }: Hamburger
         {/* 중간 바 */}
         <span
           style={{ backgroundColor: color }}
-          className={clsx("absolute left-0 h-1 w-full rounded-md transition-all  ease-in-out", {
+          className={clsx("absolute left-0 h-1 w-full rounded-md transition-all ease-in-out", {
             "top-2.5 opacity-100": !isOpen,
             "top-0 opacity-0": isOpen,
           })}
@@ -44,7 +44,7 @@ export const HamburgerMenu = ({ isOpen, setIsOpen, className, color }: Hamburger
         {/* 하단 바 */}
         <span
           style={{ backgroundColor: color }}
-          className={clsx("absolute left-0 h-1 w-full rounded-md transition-all  ease-in-out", {
+          className={clsx("absolute left-0 h-1 w-full rounded-md transition-all ease-in-out", {
             "top-2.5 -rotate-45": isOpen,
             "top-5": !isOpen,
           })}

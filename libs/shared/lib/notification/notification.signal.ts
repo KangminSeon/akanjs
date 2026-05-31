@@ -1,6 +1,5 @@
-import { Public } from "@akanjs/nest";
-import { endpoint, internal, slice } from "@akanjs/signal";
-import { Admin, Every, Self } from "@shared/nest";
+import { Admin, Every, Self } from "@libs/shared/srvkit";
+import { endpoint, internal, Public, slice } from "akanjs/signal";
 
 import * as cnst from "../cnst";
 import * as srv from "../srv";
@@ -10,7 +9,7 @@ export class NotificationInternal extends internal(srv.notification, () => ({}))
 export class NotificationSlice extends slice(
   srv.notification,
   { guards: { root: Admin, get: Public, cru: Every } },
-  () => ({})
+  () => ({}),
 ) {}
 
 export class NotificationEndpoint extends endpoint(srv.notification, ({ mutation }) => ({

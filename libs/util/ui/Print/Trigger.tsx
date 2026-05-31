@@ -1,5 +1,5 @@
 "use client";
-import { clsx } from "@akanjs/client";
+import { clsx } from "akanjs/client";
 import { useContext } from "react";
 import { useReactToPrint } from "react-to-print";
 

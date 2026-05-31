@@ -1,12 +1,13 @@
 "use client";
-import { dayjs } from "@akanjs/base";
-import { clsx, getCookie, router, setCookie } from "@akanjs/client";
-import { useInterval, usePushNoti } from "@akanjs/next";
-import { Input, Link, Loading, Modal } from "@akanjs/ui";
-import { cnst, fetch, st, usePage } from "@shared/client";
-import { isEmail, isPhoneNumber, pad } from "@util/common";
-import { AreYouRobot, Icon } from "@util/ui";
-import { ReactNode, useEffect, useState } from "react";
+import { type cnst, fetch, st, usePage } from "@libs/shared/client";
+import { pad } from "@libs/util/common";
+import { AreYouRobot, Icon } from "@libs/util/ui";
+import { dayjs } from "akanjs/base";
+import { clsx, getCookie, router, setCookie } from "akanjs/client";
+import { isEmail, isPhoneNumber } from "akanjs/common";
+import { Input, Link, Loading, Modal } from "akanjs/ui";
+import { useInterval, usePushNoti } from "akanjs/webkit";
+import { type ReactNode, useEffect, useState } from "react";
 import { AiFillCheckCircle, AiFillGithub } from "react-icons/ai";
 
 declare global {
@@ -45,7 +46,7 @@ export const SetPasswordWithPhone = ({ disabled, hash = "verify" }: VerifyPhoneP
             validate={(value) => true}
           />
           <button
-            className={`btn w-20 text-xs whitespace-nowrap ${!phoneCodeAt && "btn-primary"}`}
+            className={`btn w-20 whitespace-nowrap text-xs ${!phoneCodeAt && "btn-primary"}`}
             disabled={!!disabled || !isPhoneNumber(self.phone)} // || self.verifies.includes("phone")}
             onClick={() => {
               if (self.phone) void st.do.requestPhoneCodeForSetPassword(hash);
@@ -67,12 +68,12 @@ export const SetPasswordWithPhone = ({ disabled, hash = "verify" }: VerifyPhoneP
             validate={(value) => true}
           />
           {!isPhoneVerified && phoneCodeAt && (
-            <div className="text-primary/70 absolute top-2 right-28 flex h-8 items-center align-middle text-sm">
+            <div className="absolute top-2 right-28 flex h-8 items-center align-middle text-primary/70 text-sm">
               {pad(phoneCodeRemain.minute, 2)}:{pad(phoneCodeRemain.second, 2)}
             </div>
           )}
           <button
-            className="btn btn-primary w-20 text-xs whitespace-nowrap"
+            className="btn btn-primary w-20 whitespace-nowrap text-xs"
             disabled={!phoneCodeAt || isPhoneVerified}
             onClick={() => void st.do.getSignTokenForSetPassword()}
           >
@@ -105,7 +106,6 @@ export const SignInPassword = ({
   const turnstileToken = st.use.turnstileToken();
   const isSubmitable = isEmail(accountId) && password.length >= 7;
   const [isReady, setIsReady] = useState(true);
-
   useEffect(() => {
     return () => {
       st.do.setAccountId("");
@@ -145,7 +145,7 @@ export const SignInPassword = ({
           validate={(value: string) => true}
         />
       </div>
-      <div className="mt-4 mb-2 flex w-full items-center justify-end gap-3 text-sm tracking-tight text-gray-500">
+      <div className="mt-4 mb-2 flex w-full items-center justify-end gap-3 text-gray-500 text-sm tracking-tight">
         {forgotPasswordHref ? (
           <Link href={forgotPasswordHref} className="cursor-pointer duration-300 hover:opacity-50">
             {l("user.forgotPassword")}
@@ -171,7 +171,7 @@ export const SignInPassword = ({
       ) : null}
       <button
         id="signin-button"
-        className={`text-base-100 btn btn-primary w-full md:mt-5 ${isReady ? "" : "btn-disabled"} gap-2`}
+        className={`btn btn-primary w-full text-base-100 md:mt-5 ${isReady ? "" : "btn-disabled"} gap-2`}
         disabled={!isSubmitable}
         onClick={() => void st.do.signinWithPassword({ redirect, replace })}
       >
@@ -378,7 +378,7 @@ export const ForgotPassword = () => {
   const [accountId, setAccountId] = useState("");
   return (
     <div className="flex w-full flex-col gap-2">
-      <div className="mb-4 text-center text-3xl font-bold">{l("user.forgotPassword")}</div>
+      <div className="mb-4 text-center font-bold text-3xl">{l("user.forgotPassword")}</div>
       <div className="mb-6 text-center text-sm">{l("user.forgotPasswordDesc")}</div>
       <div className="mb-2 flex w-full items-baseline">
         <Input
@@ -398,7 +398,7 @@ export const ForgotPassword = () => {
         />
       </div>
       <button
-        className="btn btn-primary text-base-100 w-full"
+        className="btn btn-primary w-full text-base-100"
         disabled={!isEmail(accountId) || finished}
         onClick={async () => {
           await st.do.resetPassword(accountId);

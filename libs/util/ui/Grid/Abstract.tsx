@@ -1,4 +1,4 @@
-import { clsx } from "@akanjs/client";
+import { clsx } from "akanjs/client";
 
 interface AbstractProps {
   className?: string;
@@ -9,7 +9,7 @@ export const Abstract = ({ className, children }: AbstractProps) => {
     <div
       className={clsx(
         "hover:z-20 hover:scale-105",
-        className
+        className,
         // "group-data-[open=true]/gridunit:hidden"
       )}
     >

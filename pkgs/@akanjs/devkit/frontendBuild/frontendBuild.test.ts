@@ -1,0 +1,204 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import type { RoutesManifest } from "akanjs/server";
+import { CsrArtifactBuilder } from "./csrArtifactBuilder";
+import { CssCompiler, isIgnoredNodeModuleSource } from "./cssCompiler";
+import { CssImportResolver } from "./cssImportResolver";
+import { HmrChangeClassifier } from "./hmrChangeClassifier";
+import { PagesEntrySourceGenerator } from "./pagesEntrySourceGenerator";
+import { RoutesManifestArtifactSerializer } from "./routesManifestArtifactSerializer";
+
+const tempRoots: string[] = [];
+
+const makeTempRoot = async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "akan-devkit-frontend-"));
+  tempRoots.push(root);
+  return root;
+};
+
+const write = async (filePath: string, content: string) => {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, content);
+};
+
+afterEach(async () => {
+  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+describe("PagesEntrySourceGenerator", () => {
+  test("generates dynamic import source using absolute module paths", () => {
+    const source = PagesEntrySourceGenerator.generate([
+      { key: "./_index.tsx", moduleAbsPath: "/repo/apps/demo/page/_index.tsx" },
+      { key: "./admin.tsx", moduleAbsPath: "/repo/apps/demo/page/admin.tsx" },
+    ]);
+
+    expect(source).toBe(
+      [
+        "export const pages = {",
+        '  "./_index.tsx": () => import("/repo/apps/demo/page/_index.tsx"),',
+        '  "./admin.tsx": () => import("/repo/apps/demo/page/admin.tsx"),',
+        "};",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  test("generates static import source for single-file CSR bundles", () => {
+    const source = PagesEntrySourceGenerator.generateStatic([
+      { key: "./_index.tsx", moduleAbsPath: "/repo/apps/demo/page/_index.tsx" },
+      { key: "./admin.tsx", moduleAbsPath: "/repo/apps/demo/page/admin.tsx" },
+    ]);
+
+    expect(source).toBe(
+      [
+        'import * as page0 from "/repo/apps/demo/page/_index.tsx";',
+        'import * as page1 from "/repo/apps/demo/page/admin.tsx";',
+        "export const pages = {",
+        '  "./_index.tsx": async () => page0,',
+        '  "./admin.tsx": async () => page1,',
+        "};",
+        "",
+      ].join("\n"),
+    );
+  });
+});
+
+describe("CsrArtifactBuilder", () => {
+  test("replaces module script src with inline script", async () => {
+    const html = [
+      "<html>",
+      "<head></head>",
+      "<body>",
+      '<script type="module" crossorigin src="./chunk.js"></script>',
+      "</body>",
+      "</html>",
+    ].join("\n");
+
+    const inlined = await CsrArtifactBuilder.replaceModuleScriptSrc(html, (src) => {
+      expect(src).toBe("./chunk.js");
+      return 'console.log("</script>");';
+    });
+
+    expect(inlined).toContain('<script type="module">\nconsole.log("<\\/script>");\n</script>');
+    expect(inlined).not.toContain("src=");
+  });
+
+  test("creates inline stylesheet and strips external stylesheet links", () => {
+    const html =
+      '<head><link rel="stylesheet" href="/_akan/styles/akanjs.css" data-akan-css="active" /><link rel="stylesheet" href="./generated.css" /></head>';
+    const stripped = CsrArtifactBuilder.stripBundledStylesheetLinks(html);
+    const style = CsrArtifactBuilder.createInlineStyle("body::before{content:'</style>';}");
+
+    expect(stripped).toBe("<head></head>");
+    expect(style).toBe("<style data-akan-css=\"active\">\nbody::before{content:'<\\/style>';}\n</style>");
+  });
+});
+
+describe("RoutesManifestArtifactSerializer", () => {
+  test("serializes absolute artifact paths relative to artifact directory", () => {
+    const manifest = {
+      knownEntries: ["/repo/dist/apps/demo/.akan/artifact/pages.js", "already-relative.js"],
+      clientManifest: {
+        "/repo/dist/apps/demo/.akan/artifact/client.js": { file: "client.js" },
+      },
+      ssrManifest: {
+        moduleMap: {
+          "/entry": {
+            default: {
+              id: "/repo/dist/apps/demo/.akan/artifact/server/page.js",
+              chunks: ["/repo/dist/apps/demo/.akan/artifact/chunks/a.js", "chunks/b.js"],
+              name: "default",
+            },
+          },
+        },
+      },
+    } as unknown as RoutesManifest;
+
+    const serialized = RoutesManifestArtifactSerializer.serialize(manifest, "/repo/dist/apps/demo/.akan/artifact");
+    expect(serialized.knownEntries).toEqual(["pages.js", "already-relative.js"]);
+    expect(Object.keys(serialized.clientManifest)).toEqual(["client.js"]);
+    expect(serialized.ssrManifest.moduleMap["/entry"]?.default?.id).toBe("server/page.js");
+    expect(serialized.ssrManifest.moduleMap["/entry"]?.default?.chunks).toEqual(["chunks/a.js", "chunks/b.js"]);
+
+    const production = RoutesManifestArtifactSerializer.serialize(manifest, "/repo/dist/apps/demo/.akan/artifact", {
+      production: true,
+    });
+    expect(production.knownEntries).toBeUndefined();
+  });
+});
+
+describe("HmrChangeClassifier", () => {
+  test("classifies code, css, config, and ignored files", () => {
+    const classifier = new HmrChangeClassifier();
+    expect(classifier.classify("/repo/apps/demo/page/_index.tsx")).toBe("code");
+    expect(classifier.classify("/repo/apps/demo/page/styles.css")).toBe("css");
+    expect(classifier.classify("/repo/apps/demo/akan.config.ts")).toBe("config");
+    expect(classifier.classify("/repo/apps/demo/.DS_Store")).toBe("ignore");
+    expect(classifier.classify(`/repo/apps/demo/node_modules/pkg/index.ts`)).toBe("ignore");
+    expect(classifier.classify(`/repo/apps/demo/.akan/generated/page.tsx`)).toBe("ignore");
+    expect(classifier.classify("/repo/apps/demo/public/logo.png")).toBe("ignore");
+  });
+});
+
+describe("CssImportResolver", () => {
+  test("identifies package names and css files", () => {
+    expect(CssImportResolver.getPackageName("@scope/pkg/button")).toBe("@scope/pkg");
+    expect(CssImportResolver.getPackageName("plain-package/styles")).toBe("plain-package");
+    expect(CssImportResolver.getPackageName("@broken")).toBeNull();
+    expect(CssImportResolver.isCssFile("/repo/style.css")).toBe(true);
+    expect(CssImportResolver.isCssFile("/repo/style.scss")).toBe(false);
+  });
+
+  test("resolves css from exact and wildcard tsconfig paths", async () => {
+    const root = await makeTempRoot();
+    await write(path.join(root, "styles/global.css"), "body {}\n");
+    await write(path.join(root, "libs/ui/button/styles.css"), ".button {}\n");
+
+    const resolver = new CssImportResolver(root, {
+      "@styles/global": ["styles/global"],
+      "@libs/ui/*": ["libs/ui/*"],
+    });
+
+    expect(await resolver.resolve("@styles/global", root)).toBe(path.join(root, "styles/global.css"));
+    expect(await resolver.resolve("@libs/ui/button", root)).toBe(path.join(root, "libs/ui/button/styles.css"));
+    expect(await resolver.resolve("@libs/ui/missing", root)).toBeNull();
+  });
+
+  test("resolves css from single-package Akan workspace subpaths", async () => {
+    const root = await makeTempRoot();
+    await write(path.join(root, "pkgs/akanjs/ui/styles.css"), "body {}\n");
+
+    const resolver = new CssImportResolver(root, {
+      "akanjs/ui/*": ["pkgs/akanjs/ui/*"],
+    });
+
+    expect(await resolver.resolve("akanjs/ui/styles.css", root)).toBe(path.join(root, "pkgs/akanjs/ui/styles.css"));
+  });
+});
+
+describe("CssCompiler", () => {
+  test("scans installed akanjs sources while ignoring other node_modules", async () => {
+    expect(isIgnoredNodeModuleSource("/repo/node_modules/react/index.js")).toBe(true);
+    expect(isIgnoredNodeModuleSource("/repo/node_modules/akanjs/ui/Button.tsx")).toBe(false);
+  });
+
+  test("includes Tailwind candidates from installed akanjs ui sources", async () => {
+    const root = await makeTempRoot();
+    const cssPath = path.join(root, "node_modules/akanjs/ui/styles.css");
+    const uiSource = path.join(root, "node_modules/akanjs/ui/Button.tsx");
+    const tailwindCssPath = fileURLToPath(await import.meta.resolve("tailwindcss/index.css"));
+    await write(cssPath, `@import ${JSON.stringify(tailwindCssPath)};\n@source "./**/*";\n`);
+    await write(uiSource, 'export const Button = () => <button className="text-fuchsia-500" />;\n');
+
+    const compiler = new CssCompiler({
+      workspace: { workspaceRoot: root },
+      getTsConfig: async () => ({ compilerOptions: { paths: {} } }),
+    } as never);
+    const css = await compiler.compileCss([cssPath], []);
+
+    expect(css).toContain(".text-fuchsia-500");
+  });
+});

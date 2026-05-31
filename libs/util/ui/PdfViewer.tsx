@@ -1,12 +1,9 @@
 "use client";
-import "react-pdf/dist/esm/Page/AnnotationLayer.css";
-import "react-pdf/dist/esm/Page/TextLayer.css";
+// import "react-pdf/dist/esm/Page/AnnotationLayer.css";
+// import "react-pdf/dist/esm/Page/TextLayer.css";
 
-import React, { ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { BiChevronLeft, BiChevronRight } from "react-icons/bi";
-import { Document, Page, pdfjs } from "react-pdf";
-
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
 
 export interface PdfViewerProps {
   className?: string;
@@ -21,6 +18,17 @@ export const PdfViewer = ({ className, file, navigation, loadSuccess, renderSucc
   const [currentPage, setCurrentPage] = useState<number>(1);
   const divRef = useRef<HTMLDivElement>(null);
   const [divWidth, setDivWidth] = useState(0);
+  const [pdfComponents, setPdfComponents] = useState<{
+    Document: typeof import("react-pdf").Document;
+    Page: typeof import("react-pdf").Page;
+  } | null>(null);
+
+  useEffect(() => {
+    import("react-pdf").then(({ Document, Page, pdfjs }) => {
+      pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+      setPdfComponents({ Document, Page });
+    });
+  }, []);
 
   useEffect(() => {
     const observer = new ResizeObserver((entries) => {
@@ -37,6 +45,9 @@ export const PdfViewer = ({ className, file, navigation, loadSuccess, renderSucc
       observer.disconnect();
     };
   }, []);
+
+  if (!pdfComponents) return <div className={className} ref={divRef} />;
+  const { Document, Page } = pdfComponents;
 
   return (
     <div className={className} ref={divRef}>

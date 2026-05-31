@@ -1,4 +1,4 @@
-import { modelDictionary } from "@akanjs/dictionary";
+import { modelDictionary } from "akanjs/dictionary";
 
 import type { File, FileInsight, FileStatus } from "./file.constant";
 import type { FileFilter } from "./file.document";
@@ -9,7 +9,7 @@ export const dictionary = modelDictionary(["en", "ko"])
     t(["File", "파일"]).desc([
       "File is a blob data that is stored in the database, such as image, document or video",
       "파일은 이미지, 문서, 비디오 등과 같이 데이터베이스에 저장되는 blob 데이터입니다.",
-    ])
+    ]),
   )
   .model<File>((t) => ({
     imageSize: t(["Image Size", "이미지사이즈"]).desc([

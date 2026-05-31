@@ -1,8 +1,8 @@
 "use client";
-import { clsx, getCookie } from "@akanjs/client";
-import { lazy } from "@akanjs/next";
-import { Image, Loading } from "@akanjs/ui";
-import { fetch, st } from "@shared/client";
+import { fetch, st } from "@libs/shared/client";
+import { clsx, getCookie } from "akanjs/client";
+import { Image, Loading } from "akanjs/ui";
+import { lazy } from "akanjs/webkit";
 import { useState } from "react";
 import { AiOutlineCheckCircle } from "react-icons/ai";
 

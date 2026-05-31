@@ -1,5 +1,5 @@
 "use client";
-import { st } from "@shared/client";
+import { st } from "@libs/shared/client";
 import { useEffect } from "react";
 
 export const RequestPermission = () => {

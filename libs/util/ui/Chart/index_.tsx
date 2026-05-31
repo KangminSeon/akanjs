@@ -1,6 +1,6 @@
 "use client";
-import { lazy } from "@akanjs/next";
-import { Loading } from "@akanjs/ui";
+import { Loading } from "akanjs/ui";
+import { lazy } from "akanjs/webkit";
 
 export type { ChartData, ChartType } from "chart.js";
 export const Bar = lazy(() => import("./Bar"), { ssr: false, loading: () => <Loading.Skeleton /> });

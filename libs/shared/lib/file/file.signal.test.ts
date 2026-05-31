@@ -1,19 +1,23 @@
-import * as adminSpec from "@shared/lib/admin/admin.signal.spec";
-import * as userSpec from "@shared/lib/user/user.signal.spec";
+import { beforeAll, describe, expect, it } from "bun:test";
+import * as adminSpec from "@libs/shared/lib/admin/admin.signal.spec";
+import * as fileSpec from "@libs/shared/lib/file/file.signal.spec";
+import { configureSignalTest } from "akanjs/test";
 
-import * as cnst from "../cnst";
+import type * as cnst from "../cnst";
+
+configureSignalTest({ databaseMode: "tempFile" });
 
 describe("File Signal", () => {
   describe("File Service", () => {
-    let adminAgent: userSpec.AdminAgent;
-    let userAgent: userSpec.UserAgent;
     let file: cnst.LightFile;
     beforeAll(async () => {
-      adminAgent = await adminSpec.getAdminAgentWithInitialize();
+      await adminSpec.getAdminAgentWithInitialize();
     });
 
-    it("can remove file", async () => {
-      // file = await fetch.removeFile(file.id);
+    it("can upload file", async () => {
+      [file] = await fileSpec.getActiveFiles();
+      expect(file.status).toBe("active");
+      expect(file.url.length).toBeGreaterThan(0);
     });
     // it("Get Json from URI", async () => {
     //   const uri = "https://api.dogesound.club/mate/7606";

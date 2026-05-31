@@ -1,0 +1,1042 @@
+import { mkdir, rm } from "node:fs/promises";
+import path from "node:path";
+import { Logger } from "akanjs/common";
+import type { AkanChildRole, AkanChildStatus, AkanIpcMessage, AkanMetricsReport, AkanUpstream } from "akanjs/service";
+import { isTraceEnabled } from "akanjs/signal";
+import { makeAkanChildProxyHeaders } from "./akanAppHeaders";
+import type { BuilderMessage, BuilderReq, BuilderRes } from "./artifact";
+import { RotatingLogWriter } from "./logging/rotatingLogWriter";
+import { ProcessMetricsCollector } from "./processMetricsCollector";
+
+interface ChildState {
+  idx: number;
+  role: AkanChildRole;
+  proc: Bun.Subprocess<"ignore", "pipe", "pipe">;
+  ready: boolean;
+  status: AkanChildStatus;
+  pid?: number;
+  upstream?: AkanUpstream;
+  healthPath?: string;
+  metrics: AkanMetricsReport;
+  lastPongAt?: number;
+  restartAttempts: number;
+  restartCount: number;
+  restartTimer: Timer | null;
+  restartPending: boolean;
+  lastExitCode?: number | null;
+  lastRestartAt?: number;
+  lastRestartReason?: string;
+}
+
+interface GatewayWsData {
+  childIdx: number;
+  socketId: string;
+  upstream: WebSocket;
+}
+
+type GatewayUpstream = {
+  http: Extract<AkanUpstream, { type: "unix" }>;
+  ws?: Extract<AkanUpstream, { type: "tcp" }>;
+};
+
+/** Options for the Akan gateway that launches child server replicas and listens for traffic. */
+export interface AkanAppOptions {
+  replica?: number | string;
+  serverPath?: string;
+  runtimeDir?: string;
+  port?: number;
+  wsBasePort?: number;
+}
+
+interface AkanReplicaConfig {
+  federation: number;
+  batch: number;
+  all: number;
+  total: number;
+  value: string;
+}
+
+/** Gateway/orchestrator that starts Akan child servers and proxies HTTP/WebSocket traffic. */
+export class AkanApp {
+  static readonly #childRestartBaseDelayMs = 1_000;
+  static readonly #childRestartMaxDelayMs = 30_000;
+  static readonly #childRestartGraceMs = 5_000;
+
+  readonly logger = new Logger("AkanApp");
+  readonly #serverPath: string;
+  readonly #artifactDir: string;
+  readonly #replica: AkanReplicaConfig;
+  readonly #runtimeDir: string;
+  readonly #port: number;
+  readonly #wsBasePort: number;
+  readonly #children = new Map<number, ChildState>();
+  readonly #roomChildren = new Map<string, Set<number>>();
+  readonly #childRooms = new Map<number, Set<string>>();
+  readonly #socketRooms = new Map<string, { childIdx: number; rooms: Set<string> }>();
+  #nextBuilderReqId = 1;
+  readonly #builderReqMap = new Map<number, { childIdx: number; childLocalId: number }>();
+  #server: Bun.Server<GatewayWsData> | null = null;
+  #rrIdx = 0;
+  #federationChildCache: ChildState[] | null = null;
+  #snapshotTimer: Timer | null = null;
+  #healthTimer: Timer | null = null;
+  #metricsTimer: Timer | null = null;
+  #logWriter: RotatingLogWriter | null = null;
+  #removeLogSink: (() => void) | null = null;
+  readonly #childOutputBuffers = new Map<string, string>();
+  static readonly #ansiPattern = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g");
+  #gatewayMetrics: AkanMetricsReport = {};
+  #proxyHopCount = 0;
+  #proxyHopSumMs = 0;
+  #proxyHopMaxMs = 0;
+  #resolveStopped: (() => void) | null = null;
+  #exitAfterStop = false;
+  #stopping = false;
+
+  constructor(serverPath = "./server", options: AkanAppOptions = {}) {
+    this.#serverPath = AkanApp.#resolveServerPath(options.serverPath ?? serverPath);
+    this.#artifactDir = path.resolve(path.dirname(this.#serverPath), ".akan", "artifact");
+    this.#replica = AkanApp.#parseReplicaConfig(options.replica);
+    this.#runtimeDir =
+      (options.runtimeDir ?? process.env.AKAN_RUNTIME_DIR ?? process.env.NODE_ENV === "production")
+        ? path.resolve(process.cwd(), "runtime")
+        : path.resolve(process.cwd(), "local", "apps", process.env.AKAN_PUBLIC_APP_NAME ?? "unknown", "runtime");
+    this.#port = Number(options.port ?? process.env.PORT ?? 8282);
+    this.#wsBasePort = Number(options.wsBasePort ?? process.env.AKAN_WS_BASE_PORT ?? this.#port + 10_000);
+  }
+
+  static #resolveServerPath(serverPath: string) {
+    const baseDir = path.dirname(Bun.main);
+    const resolved = path.isAbsolute(serverPath) ? serverPath : path.resolve(baseDir, serverPath);
+    if (path.extname(resolved)) return resolved;
+    return Bun.main.endsWith(".js") ? `${resolved}.js` : `${resolved}.ts`;
+  }
+
+  static #parseReplicaConfig(value?: number | string): AkanReplicaConfig {
+    const configured = value ?? process.env.AKAN_REPLICA;
+    const raw = String(configured ?? "0,0,1").trim();
+    const [federationRaw, batchRaw, allRaw] = raw.split(",");
+    const federation = AkanApp.#parseReplicaCount(federationRaw, configured == null ? 0 : 0, 0);
+    const batch = AkanApp.#parseReplicaCount(batchRaw, configured == null ? 0 : 0, 0);
+    const all = AkanApp.#parseReplicaCount(allRaw, configured == null ? 1 : 0, 0);
+    const normalizedAll = federation + batch + all > 0 ? all : 1;
+    return {
+      federation,
+      batch,
+      all: normalizedAll,
+      total: federation + batch + normalizedAll,
+      value: `${federation},${batch},${normalizedAll}`,
+    };
+  }
+
+  static #parseReplicaCount(value: string | undefined, fallback: number, min: number) {
+    const parsed = Number.parseInt(value ?? "", 10);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(min, parsed);
+  }
+
+  static #defaultChildNodeEnv() {
+    if (process.env.NODE_ENV) return process.env.NODE_ENV;
+    if (process.env.AKAN_COMMAND_TYPE === "start") return "development";
+    if (process.env.AKAN_COMMAND_TYPE === "build") return "production";
+    return Bun.main.endsWith(".js") ? "production" : "development";
+  }
+
+  async start() {
+    await this.#prepareRuntimeDir();
+    this.#startFileLogging();
+    for (let idx = 0; idx < this.#replica.total; idx++) this.#spawn(idx);
+    this.#listen();
+    this.#snapshotTimer = setInterval(() => this.#requestRoomSnapshots(), 30_000);
+    this.#healthTimer = setInterval(() => this.#checkHealth(), 2_000);
+    this.#startMetricsReporting();
+    process.on("message", (message) => this.#handleHostMessage(message as BuilderMessage));
+    process.on("SIGINT", () => this.#handleShutdownSignal("SIGINT"));
+    process.on("SIGTERM", () => this.#handleShutdownSignal("SIGTERM"));
+    await new Promise<void>((resolve) => {
+      // Keep the orchestrator alive while child processes run.
+      this.#resolveStopped = resolve;
+    });
+  }
+
+  async stop(signal = "SIGTERM") {
+    if (this.#stopping) return;
+    this.#stopping = true;
+    if (this.#snapshotTimer) {
+      clearInterval(this.#snapshotTimer);
+      this.#snapshotTimer = null;
+    }
+    if (this.#healthTimer) {
+      clearInterval(this.#healthTimer);
+      this.#healthTimer = null;
+    }
+    if (this.#metricsTimer) {
+      clearInterval(this.#metricsTimer);
+      this.#metricsTimer = null;
+    }
+    this.#server?.stop(true);
+    this.#server = null;
+    for (const child of this.#children.values()) {
+      if (child.restartTimer) {
+        clearTimeout(child.restartTimer);
+        child.restartTimer = null;
+      }
+      this.#sendToChild(child, { type: "shutdown", signal } satisfies AkanIpcMessage);
+    }
+    await Promise.race([
+      Promise.all([...this.#children.values()].map((child) => child.proc.exited.catch(() => undefined))),
+      new Promise((resolve) => setTimeout(resolve, 30_000)),
+    ]);
+    for (const child of this.#children.values()) {
+      if (!child.proc.killed) child.proc.kill();
+    }
+    this.#children.clear();
+    await this.#stopFileLogging();
+    this.#resolveStopped?.();
+    this.#resolveStopped = null;
+    if (this.#exitAfterStop) process.exit(0);
+  }
+
+  #handleShutdownSignal(signal: NodeJS.Signals) {
+    if (this.#stopping) process.exit(1);
+    this.#exitAfterStop = true;
+    void this.stop(signal).catch((error) => {
+      this.logger.error(`Failed to shutdown gateway: ${error instanceof Error ? error.message : String(error)}`);
+      process.exit(1);
+    });
+  }
+
+  #spawn(idx: number) {
+    const role = this.#getRole(idx);
+    const upstream = this.#getChildUpstream(idx, role);
+    const childCode = `import(${JSON.stringify(path.resolve(this.#serverPath))}).then((mod)=>{ const server = mod.server ?? mod.app; if (!server?.start) throw new Error("server.ts must export server or app with start()"); return server.start({ listen: process.env.SERVER_MODE !== "batch" }); }).catch((error)=>{ process.send?.({ type: "error", message: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined, pid: process.pid }); process.exit(1); });`;
+    let proc!: Bun.Subprocess<"ignore", "pipe", "pipe">;
+    proc = Bun.spawn(["bun", "-e", childCode], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        NODE_ENV: AkanApp.#defaultChildNodeEnv(),
+        AKAN_REPLICA: this.#replica.value,
+        AKAN_REPLICA_IDX: String(idx),
+        AKAN_APP_DIR: path.dirname(this.#serverPath),
+        SERVER_MODE: role,
+        AKAN_CHILD_SOCKET: upstream.http.socketPath,
+        AKAN_CHILD_WS_PORT: upstream.ws ? String(upstream.ws.port) : "",
+      },
+      ipc: (message) => this.#handleMessage(idx, message as AkanIpcMessage, proc),
+      stdout: "pipe",
+      stderr: "pipe",
+      stdin: "ignore",
+    });
+    const previous = this.#children.get(idx);
+    this.#children.set(idx, {
+      idx,
+      role,
+      proc,
+      ready: false,
+      status: "starting",
+      metrics: {},
+      restartAttempts: previous?.restartAttempts ?? 0,
+      restartCount: previous?.restartCount ?? 0,
+      restartTimer: null,
+      restartPending: false,
+      lastExitCode: previous?.lastExitCode,
+      lastRestartAt: previous?.lastRestartAt,
+      lastRestartReason: previous?.lastRestartReason,
+    });
+    this.#invalidateFederationChildCache();
+    this.#pipeOutput(idx, role, proc.stdout, "stdout");
+    this.#pipeOutput(idx, role, proc.stderr, "stderr");
+    proc.exited.then((code) => this.#handleChildExit(idx, proc, code));
+  }
+
+  #handleChildExit(idx: number, proc: Bun.Subprocess<"ignore", "pipe", "pipe">, code: number | null) {
+    const child = this.#children.get(idx);
+    if (!child || child.proc !== proc) return;
+    child.status = "exited";
+    child.lastExitCode = code;
+    this.#invalidateFederationChildCache();
+    this.#removeChildRooms(idx);
+    if (this.#stopping) return;
+    void this.#scheduleChildRestart(child, proc, `exit:${code ?? "unknown"}`);
+  }
+
+  #scheduleChildRestart(child: ChildState, proc: Bun.Subprocess<"ignore", "pipe", "pipe">, reason: string): void {
+    if (this.#stopping) return;
+    if (child.proc !== proc) return;
+    if (child.restartPending || child.restartTimer) {
+      child.lastRestartReason = reason;
+      return;
+    }
+
+    child.restartPending = true;
+    child.ready = false;
+    child.status = reason === "health-timeout" ? "unhealthy" : "exited";
+    child.upstream = undefined;
+    child.healthPath = undefined;
+    this.#invalidateFederationChildCache();
+    child.lastRestartReason = reason;
+    child.lastRestartAt = Date.now();
+    this.#removeChildRooms(child.idx);
+
+    const attempt = child.restartAttempts;
+    const delay = Math.min(AkanApp.#childRestartBaseDelayMs * 2 ** attempt, AkanApp.#childRestartMaxDelayMs);
+    child.restartAttempts = attempt + 1;
+    child.restartCount += 1;
+    this.logger.error(
+      `Child ${child.idx}/${child.role} failed (${reason}); restarting in ${delay}ms (attempt ${child.restartAttempts})`,
+    );
+
+    void this.#restartChildAfterDelay(child.idx, proc, reason, delay).catch((error) => {
+      const current = this.#children.get(child.idx);
+      if (!current || current.proc !== proc || this.#stopping) return;
+      current.restartPending = false;
+      this.logger.error(
+        `Failed to restart child ${child.idx}/${child.role}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      this.#scheduleChildRestart(current, proc, "restart-failed");
+    });
+  }
+
+  async #restartChildAfterDelay(
+    idx: number,
+    proc: Bun.Subprocess<"ignore", "pipe", "pipe">,
+    reason: string,
+    delay: number,
+  ) {
+    const child = this.#children.get(idx);
+    if (!child || child.proc !== proc || this.#stopping) return;
+    await this.#stopChildForRestart(child, proc, reason);
+    if (this.#stopping) return;
+    const current = this.#children.get(idx);
+    if (!current || current.proc !== proc) return;
+    current.restartTimer = setTimeout(() => {
+      current.restartTimer = null;
+      void this.#respawnChild(idx, proc).catch((error) => {
+        const latest = this.#children.get(idx);
+        if (!latest || latest.proc !== proc || this.#stopping) return;
+        latest.restartPending = false;
+        this.logger.error(
+          `Failed to respawn child ${idx}/${latest.role}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        this.#scheduleChildRestart(latest, proc, "respawn-failed");
+      });
+    }, delay);
+  }
+
+  async #respawnChild(idx: number, proc: Bun.Subprocess<"ignore", "pipe", "pipe">) {
+    if (this.#stopping) return;
+    const current = this.#children.get(idx);
+    if (!current || current.proc !== proc) return;
+    await this.#removeChildSocket(idx, current.role);
+    current.restartPending = false;
+    this.#spawn(idx);
+  }
+
+  async #stopChildForRestart(child: ChildState, proc: Bun.Subprocess<"ignore", "pipe", "pipe">, reason: string) {
+    if (!proc.killed) {
+      this.#sendToChild(child, { type: "shutdown", signal: reason } satisfies AkanIpcMessage);
+    }
+    const result = await Promise.race([
+      proc.exited.then(() => "exited" as const).catch(() => "exited" as const),
+      new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), AkanApp.#childRestartGraceMs)),
+    ]);
+    if (result === "timeout" && !proc.killed) {
+      this.logger.warn(`Child ${child.idx}/${child.role} did not stop in ${AkanApp.#childRestartGraceMs}ms; killing`);
+      proc.kill();
+      await proc.exited.catch(() => undefined);
+    }
+  }
+
+  async #prepareRuntimeDir() {
+    await mkdir(this.#runtimeDir, { recursive: true });
+    for (let idx = 0; idx < this.#replica.total; idx++) {
+      await this.#removeChildSocket(idx, this.#getRole(idx));
+    }
+  }
+
+  async #removeChildSocket(idx: number, role: AkanChildRole) {
+    const socketPath = this.#getChildUpstream(idx, role).http.socketPath;
+    try {
+      await rm(socketPath, { force: true });
+    } catch {
+      // Best-effort cleanup for stale Unix sockets.
+    }
+  }
+
+  #startFileLogging() {
+    this.#logWriter = RotatingLogWriter.fromRuntimeDir(this.#runtimeDir);
+    if (!this.#logWriter) return;
+    this.#removeLogSink = Logger.addSink((entry) => {
+      this.#logWriter?.write("gateway", entry.plainMessage);
+    });
+  }
+
+  async #stopFileLogging() {
+    this.#removeLogSink?.();
+    this.#removeLogSink = null;
+    const writer = this.#logWriter;
+    this.#logWriter = null;
+    await writer?.close();
+  }
+
+  #listen() {
+    this.#server = Bun.serve({
+      idleTimeout: 0,
+      port: this.#port,
+      fetch: (req, server) => this.#handleFetch(req, server),
+      websocket: {
+        idleTimeout: 0,
+        maxPayloadLength: 16 * 1024 * 1024,
+        backpressureLimit: 1024 * 1024,
+        closeOnBackpressureLimit: true,
+        open: (ws) => this.#handleWsOpen(ws),
+        message: (ws, message) => this.#handleWsMessage(ws, message),
+        close: (ws, code, reason) => this.#handleWsClose(ws, code, reason),
+        data: {} as GatewayWsData,
+      },
+    });
+    this.logger.info(`AkanApp gateway is running on port ${this.#port}`);
+  }
+
+  async #handleFetch(req: Request, server: Bun.Server<GatewayWsData>): Promise<Response | undefined> {
+    const url = new URL(req.url);
+    if (url.pathname === "/_akan/app/health") return Response.json(this.#getHealthStatus());
+    if (url.pathname === "/_akan/app/metrics") return Response.json(this.#getMetricsStatus());
+    if (url.pathname === "/_akan/bench/ping") return new Response("ok");
+    if (this.#isWebSocketPath(url.pathname)) return this.#upgradeWebSocket(req, server);
+    const assetResponse = await this.#serveImmutableArtifact(req, url);
+    if (assetResponse) return assetResponse;
+    return await this.#proxyHttp(req);
+  }
+
+  #isWebSocketPath(pathname: string) {
+    return pathname === "/api/ws" || pathname === "/_akan/hmr";
+  }
+
+  async #serveImmutableArtifact(req: Request, url: URL): Promise<Response | null> {
+    const clientPrefix = "/_akan/client/";
+    if (url.pathname.startsWith(clientPrefix)) {
+      const filePath = this.#safeResolve(
+        path.join(this.#artifactDir, "client"),
+        url.pathname.slice(clientPrefix.length),
+      );
+      if (!filePath) return new Response("Not Found", { status: 404 });
+      const file = Bun.file(filePath);
+      if (!(await file.exists())) return new Response("Not Found", { status: 404 });
+      return this.#fileResponse(req, filePath, {
+        contentType: file.type || "application/javascript",
+        cacheControl: "public, max-age=31536000, immutable",
+      });
+    }
+
+    for (const prefix of ["/_akan/styles/", "/_akan/fonts/"]) {
+      if (!url.pathname.startsWith(prefix)) continue;
+      const filePath = this.#safeResolve(this.#artifactDir, url.pathname.slice("/_akan/".length));
+      if (!filePath) return new Response("Not Found", { status: 404 });
+      const file = Bun.file(filePath);
+      if (!(await file.exists())) return new Response("Not Found", { status: 404 });
+      return this.#fileResponse(req, filePath, {
+        contentType: file.type || (prefix === "/_akan/styles/" ? "text/css; charset=utf-8" : "font/woff2"),
+        cacheControl: "public, max-age=31536000, immutable",
+      });
+    }
+
+    return null;
+  }
+
+  #upgradeWebSocket(req: Request, server: Bun.Server<GatewayWsData>): Response | undefined {
+    const child = this.#pickFederationChild();
+    if (!child?.upstream || !child.upstream || !this.#getChildUpstream(child.idx, child.role).ws) {
+      return new Response("No websocket upstream is ready", { status: 503 });
+    }
+    const upstream = this.#getChildUpstream(child.idx, child.role).ws;
+    if (!upstream) return new Response("No websocket upstream is ready", { status: 503 });
+    const url = new URL(req.url);
+    const upstreamWs = new WebSocket(`ws://${upstream.host}:${upstream.port}${url.pathname}${url.search}`, {
+      headers: this.#makeProxyHeaders(req, child.idx),
+    } as unknown as string[]);
+    const socketId = crypto.randomUUID();
+    const upgraded = server.upgrade(req, { data: { childIdx: child.idx, socketId, upstream: upstreamWs } });
+    if (!upgraded) {
+      upstreamWs.close();
+      return new Response("WebSocket upgrade failed", { status: 500 });
+    }
+    child.metrics.activeWebSockets = (child.metrics.activeWebSockets ?? 0) + 1;
+    return undefined;
+  }
+
+  #handleWsOpen(ws: Bun.ServerWebSocket<GatewayWsData>) {
+    const upstream = ws.data.upstream;
+    const pending: (string | ArrayBuffer)[] = [];
+    upstream.addEventListener("open", () => {
+      for (const message of pending.splice(0)) upstream.send(message);
+    });
+    upstream.addEventListener("message", (event) => {
+      const result = ws.send(event.data as string | ArrayBuffer);
+      if (result === 0) upstream.close();
+    });
+    upstream.addEventListener("close", (event) => ws.close(event.code, event.reason));
+    upstream.addEventListener("error", () => ws.close(1011, "upstream websocket error"));
+    Object.assign(ws.data, { pending });
+  }
+
+  #handleWsMessage(
+    ws: Bun.ServerWebSocket<GatewayWsData & { pending?: (string | ArrayBuffer)[] }>,
+    message: string | ArrayBuffer | Uint8Array,
+  ) {
+    const upstream = ws.data.upstream;
+    const payload =
+      typeof message === "string"
+        ? message
+        : message instanceof ArrayBuffer
+          ? message
+          : new Uint8Array(message).slice().buffer;
+    if (upstream.readyState === WebSocket.OPEN) upstream.send(payload);
+    else ws.data.pending?.push(payload as string | ArrayBuffer);
+  }
+
+  #handleWsClose(ws: Bun.ServerWebSocket<GatewayWsData>, code: number, reason: string) {
+    ws.data.upstream.close(code, reason);
+    const child = this.#children.get(ws.data.childIdx);
+    if (child) child.metrics.activeWebSockets = Math.max(0, (child.metrics.activeWebSockets ?? 1) - 1);
+  }
+
+  #getHealthStatus() {
+    return {
+      status: this.#stopping ? "stopping" : "running",
+      children: [...this.#children.values()].map((child) => ({
+        idx: child.idx,
+        role: child.role,
+        status: child.status,
+        ready: child.ready,
+        pid: child.pid,
+        upstream: child.upstream,
+        restartAttempts: child.restartAttempts,
+        restartCount: child.restartCount,
+        restartPending: child.restartPending,
+        lastExitCode: child.lastExitCode,
+        lastRestartAt: child.lastRestartAt,
+        lastRestartReason: child.lastRestartReason,
+      })),
+    };
+  }
+
+  #getMetricsStatus() {
+    return {
+      rooms: this.#roomChildren.size,
+      sockets: this.#socketRooms.size,
+      gateway: this.#gatewayMetrics,
+      proxyHop: this.#proxyHopCount
+        ? {
+            count: this.#proxyHopCount,
+            meanMs: Math.round((this.#proxyHopSumMs / this.#proxyHopCount) * 1000) / 1000,
+            maxMs: Math.round(this.#proxyHopMaxMs * 1000) / 1000,
+          }
+        : null,
+      children: [...this.#children.values()].map((child) => ({
+        idx: child.idx,
+        role: child.role,
+        metrics: child.metrics,
+        rooms: this.#childRooms.get(child.idx)?.size ?? 0,
+        restartAttempts: child.restartAttempts,
+        restartCount: child.restartCount,
+        restartPending: child.restartPending,
+        lastExitCode: child.lastExitCode,
+        lastRestartAt: child.lastRestartAt,
+        lastRestartReason: child.lastRestartReason,
+      })),
+    };
+  }
+
+  async #proxyHttp(req: Request): Promise<Response> {
+    const child = this.#pickFederationChild();
+    if (!child?.upstream || child.upstream.type !== "unix") {
+      return new Response("No healthy federation child is ready", { status: 503 });
+    }
+    const url = new URL(req.url);
+    const upstreamUrl = `http://akan-child${url.pathname}${url.search}`;
+    const headers = this.#makeProxyHeaders(req, child.idx);
+    child.metrics.activeRequests = (child.metrics.activeRequests ?? 0) + 1;
+    child.metrics.totalRequests = (child.metrics.totalRequests ?? 0) + 1;
+    const traced = isTraceEnabled();
+    const hopStart = traced ? performance.now() : 0;
+    try {
+      const upstreamRes = await fetch(upstreamUrl, {
+        unix: child.upstream.socketPath,
+        method: req.method,
+        headers,
+        body: req.method === "GET" || req.method === "HEAD" ? undefined : req.body,
+        signal: req.signal,
+        redirect: "manual",
+      });
+      return this.#proxyResponse(upstreamRes);
+    } finally {
+      child.metrics.activeRequests = Math.max(0, (child.metrics.activeRequests ?? 1) - 1);
+      if (traced) this.#recordProxyHop(performance.now() - hopStart);
+    }
+  }
+
+  /**
+   * Gateway-observed upstream round-trip time. The pure proxy overhead is this value
+   * minus the child handler time captured in the per-request trace.
+   */
+  #recordProxyHop(durationMs: number) {
+    this.#proxyHopCount += 1;
+    this.#proxyHopSumMs += durationMs;
+    this.#proxyHopMaxMs = Math.max(this.#proxyHopMaxMs, durationMs);
+  }
+
+  #proxyResponse(upstreamRes: Response): Response {
+    const headers = new Headers(upstreamRes.headers);
+    // Bun fetch transparently decompresses upstream bodies but keeps these
+    // headers, which makes browsers try to decode an already-decoded payload.
+    headers.delete("content-encoding");
+    headers.delete("content-length");
+    this.#rewriteInternalLocation(headers);
+    return new Response(upstreamRes.body, {
+      status: upstreamRes.status,
+      statusText: upstreamRes.statusText,
+      headers,
+    });
+  }
+
+  #rewriteInternalLocation(headers: Headers) {
+    const location = headers.get("location");
+    if (!location) return;
+    try {
+      const parsed = new URL(location);
+      if (parsed.hostname === "akan-child") headers.set("location", `${parsed.pathname}${parsed.search}${parsed.hash}`);
+    } catch {
+      // Relative redirects are already safe to pass through.
+    }
+  }
+
+  async #fileResponse(
+    req: Request,
+    filePath: string,
+    options: { contentType: string; cacheControl?: string },
+  ): Promise<Response> {
+    const headers = new Headers({ "Content-Type": options.contentType });
+    if (options.cacheControl) headers.set("Cache-Control", options.cacheControl);
+
+    const gzipPath = `${filePath}.gz`;
+    if (this.#acceptsGzip(req) && this.#isCompressible(options.contentType)) {
+      const gzipFile = Bun.file(gzipPath);
+      if (await gzipFile.exists()) {
+        const gzipBytes = await gzipFile.bytes();
+        headers.set("Content-Encoding", "gzip");
+        headers.set("Content-Length", String(gzipBytes.byteLength));
+        headers.set("Vary", "Accept-Encoding");
+        return new Response(this.#toArrayBuffer(gzipBytes), { headers });
+      }
+    }
+
+    return new Response(Bun.file(filePath).stream(), { headers });
+  }
+
+  #acceptsGzip(req: Request): boolean {
+    const acceptEncoding = req.headers.get("accept-encoding") ?? "";
+    return /\bgzip\b/.test(acceptEncoding);
+  }
+
+  #isCompressible(contentType: string): boolean {
+    const type = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
+    return (
+      type.startsWith("text/") ||
+      type === "application/javascript" ||
+      type === "application/json" ||
+      type === "application/manifest+json" ||
+      type === "image/svg+xml"
+    );
+  }
+
+  #toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  }
+
+  #safeResolve(baseDir: string, urlPath: string): string | null {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(urlPath);
+    } catch {
+      return null;
+    }
+    if (decoded.includes("\0")) return null;
+    const normalizedBase = path.resolve(baseDir);
+    const rel = decoded.replace(/^[/\\]+/, "");
+    const resolved = path.resolve(normalizedBase, rel);
+    if (resolved === normalizedBase) return resolved;
+    const baseWithSep = normalizedBase.endsWith(path.sep) ? normalizedBase : `${normalizedBase}${path.sep}`;
+    if (!resolved.startsWith(baseWithSep)) return null;
+    return resolved;
+  }
+
+  #makeProxyHeaders(req: Request, childIdx: number) {
+    return makeAkanChildProxyHeaders(req, childIdx);
+  }
+
+  #invalidateFederationChildCache() {
+    this.#federationChildCache = null;
+  }
+
+  #pickFederationChild() {
+    const candidates =
+      this.#federationChildCache ??
+      [...this.#children.values()].filter(
+        (child) =>
+          (child.role === "federation" || child.role === "all") &&
+          child.ready &&
+          child.status !== "unhealthy" &&
+          child.status !== "exited" &&
+          !child.proc.killed,
+      );
+    this.#federationChildCache = candidates;
+    if (candidates.length === 0) return null;
+    const child = candidates[this.#rrIdx % candidates.length];
+    this.#rrIdx++;
+    return child;
+  }
+
+  #getRole(idx: number): AkanChildRole {
+    if (idx < this.#replica.federation) return "federation";
+    if (idx < this.#replica.federation + this.#replica.batch) return "batch";
+    return "all";
+  }
+
+  #getChildUpstream(idx: number, role: AkanChildRole): GatewayUpstream {
+    return {
+      http: { type: "unix", socketPath: path.join(this.#runtimeDir, `akan-child-${idx}.sock`) },
+      ws: role === "batch" ? undefined : { type: "tcp", host: "127.0.0.1", port: this.#wsBasePort + idx },
+    };
+  }
+
+  #handleMessage(
+    idx: number,
+    message: AkanIpcMessage | BuilderMessage,
+    proc?: Bun.Subprocess<"ignore", "pipe", "pipe">,
+  ) {
+    const child = this.#children.get(idx);
+    if (proc && (!child || child.proc !== proc)) return;
+    if (!message || typeof message !== "object") return;
+    switch (message.type) {
+      case "ready":
+        this.#markReady(idx, message);
+        return;
+      case "pubsub.publish":
+        this.#deliverPubsub(idx, message);
+        return;
+      case "pubsub.subscribe":
+        this.#addRoomMembership(idx, message.roomId, message.socketId);
+        return;
+      case "pubsub.unsubscribe":
+        this.#removeRoomMembership(idx, message.roomId, message.socketId);
+        return;
+      case "pubsub.snapshot":
+        this.#replaceRoomSnapshot(idx, message.rooms);
+        return;
+      case "metrics.report":
+        this.#updateMetrics(idx, message.metrics);
+        return;
+      case "health.pong":
+        this.#markHealthy(idx);
+        return;
+      case "queue.enqueued":
+        this.#fanoutToBatch({ type: "queue.wake", queue: message.queue, name: message.name });
+        return;
+      case "error":
+        this.logger.error(message.message);
+        if (child && proc) void this.#scheduleChildRestart(child, proc, "child-error");
+        return;
+      case "build-route":
+        this.#forwardBuildRoute(idx, message);
+        return;
+    }
+  }
+
+  #handleHostMessage(message: BuilderMessage) {
+    if (!message || typeof message !== "object") return;
+    switch (message.type) {
+      case "builder-ready":
+      case "invalidate":
+      case "css-updated":
+      case "pages-updated":
+        this.#fanoutToFederation(message);
+        return;
+      case "build-route-res":
+        this.#forwardBuildRouteResponse(message);
+        return;
+    }
+  }
+
+  #markReady(idx: number, message: Extract<AkanIpcMessage, { type: "ready" }>) {
+    const child = this.#children.get(idx);
+    if (!child) return;
+    child.ready = true;
+    child.status = "ready";
+    child.pid = message.pid;
+    child.upstream = message.upstream;
+    child.healthPath = message.healthPath;
+    child.lastPongAt = Date.now();
+    child.restartAttempts = 0;
+    child.restartPending = false;
+    this.#invalidateFederationChildCache();
+    if ([...this.#children.values()].every((item) => item.ready)) {
+      process.send?.({ type: "backend-ready", pid: process.pid } satisfies AkanIpcMessage);
+      this.logger.verbose(`All ${this.#children.size} child process(es) are ready`);
+    }
+  }
+
+  #markHealthy(idx: number) {
+    const child = this.#children.get(idx);
+    if (!child) return;
+    child.status = "healthy";
+    child.lastPongAt = Date.now();
+    this.#invalidateFederationChildCache();
+  }
+
+  #deliverPubsub(originIdx: number, message: Extract<AkanIpcMessage, { type: "pubsub.publish" }>) {
+    const targets = this.#roomChildren.get(message.roomId);
+    if (!targets?.size) {
+      const child = this.#children.get(originIdx);
+      if (child) child.metrics.pubsubDropCount = (child.metrics.pubsubDropCount ?? 0) + 1;
+      this.logger.verbose(`Dropping pubsub ${message.roomId}; no subscribers`);
+      return;
+    }
+    for (const childIdx of targets) {
+      if (childIdx === originIdx) continue;
+      const child = this.#children.get(childIdx);
+      if (!child || child.proc.killed || child.status === "exited") continue;
+      if (
+        !this.#sendToChild(child, {
+          type: "pubsub.deliver",
+          roomId: message.roomId,
+          data: message.data,
+          origin: message.origin,
+        } satisfies AkanIpcMessage)
+      )
+        continue;
+      child.metrics.pubsubDeliverCount = (child.metrics.pubsubDeliverCount ?? 0) + 1;
+    }
+  }
+
+  #addRoomMembership(childIdx: number, roomId: string, socketId?: string) {
+    const roomChildren = this.#roomChildren.get(roomId) ?? new Set<number>();
+    roomChildren.add(childIdx);
+    this.#roomChildren.set(roomId, roomChildren);
+
+    const childRooms = this.#childRooms.get(childIdx) ?? new Set<string>();
+    childRooms.add(roomId);
+    this.#childRooms.set(childIdx, childRooms);
+
+    if (socketId) {
+      const socketRooms = this.#socketRooms.get(socketId) ?? { childIdx, rooms: new Set<string>() };
+      socketRooms.rooms.add(roomId);
+      this.#socketRooms.set(socketId, socketRooms);
+    }
+  }
+
+  #removeRoomMembership(childIdx: number, roomId: string, socketId?: string) {
+    const roomChildren = this.#roomChildren.get(roomId);
+    roomChildren?.delete(childIdx);
+    if (roomChildren?.size === 0) this.#roomChildren.delete(roomId);
+
+    const childRooms = this.#childRooms.get(childIdx);
+    childRooms?.delete(roomId);
+    if (childRooms?.size === 0) this.#childRooms.delete(childIdx);
+
+    if (socketId) {
+      const socketRooms = this.#socketRooms.get(socketId);
+      socketRooms?.rooms.delete(roomId);
+      if (!socketRooms || socketRooms.rooms.size === 0) this.#socketRooms.delete(socketId);
+    }
+  }
+
+  #replaceRoomSnapshot(childIdx: number, rooms: string[]) {
+    for (const roomId of this.#childRooms.get(childIdx) ?? []) {
+      const roomChildren = this.#roomChildren.get(roomId);
+      roomChildren?.delete(childIdx);
+      if (roomChildren?.size === 0) this.#roomChildren.delete(roomId);
+    }
+    this.#childRooms.set(childIdx, new Set());
+    for (const roomId of rooms) this.#addRoomMembership(childIdx, roomId);
+  }
+
+  #removeChildRooms(childIdx: number) {
+    for (const roomId of this.#childRooms.get(childIdx) ?? []) {
+      const roomChildren = this.#roomChildren.get(roomId);
+      roomChildren?.delete(childIdx);
+      if (roomChildren?.size === 0) this.#roomChildren.delete(roomId);
+    }
+    this.#childRooms.delete(childIdx);
+    for (const [socketId, socket] of this.#socketRooms.entries()) {
+      if (socket.childIdx === childIdx) this.#socketRooms.delete(socketId);
+    }
+  }
+
+  #updateMetrics(childIdx: number, metrics: AkanMetricsReport) {
+    const child = this.#children.get(childIdx);
+    if (!child) return;
+    child.metrics = { ...child.metrics, pid: metrics.pid ?? child.pid, ...metrics };
+  }
+
+  #startMetricsReporting() {
+    if (this.#metricsTimer) return;
+    const report = () => {
+      void this.#reportMetrics();
+    };
+    report();
+    this.#metricsTimer = setInterval(report, ProcessMetricsCollector.parseMemoryLogIntervalMs());
+  }
+
+  async #reportMetrics() {
+    this.#gatewayMetrics = await ProcessMetricsCollector.collect({ role: "gateway" });
+    if (process.env.AKAN_MEMORY_LOG !== "1") return;
+    this.logger.verbose(
+      `memory role=gateway ${ProcessMetricsCollector.format(this.#gatewayMetrics)} children=${this.#children.size}`,
+    );
+    for (const child of this.#children.values()) {
+      if (!child.metrics.rssBytes) continue;
+      const rooms = this.#childRooms.get(child.idx)?.size ?? 0;
+      this.logger.verbose(
+        `memory role=${child.role} idx=${child.idx} ${ProcessMetricsCollector.format({
+          ...child.metrics,
+          pid: child.metrics.pid ?? child.pid,
+        })} activeRequests=${child.metrics.activeRequests ?? 0} activeWebSockets=${
+          child.metrics.activeWebSockets ?? 0
+        } rooms=${rooms} rscPending=${child.metrics.rscPendingRenderCount ?? 0} rscModules=${
+          child.metrics.rscLoadedRouteModuleCount ?? 0
+        }`,
+      );
+    }
+  }
+
+  #requestRoomSnapshots() {
+    for (const child of this.#children.values()) {
+      if (child.proc.killed || child.status === "exited") continue;
+      this.#sendToChild(child, { type: "pubsub.snapshot.request" } satisfies AkanIpcMessage);
+    }
+  }
+
+  #checkHealth() {
+    const now = Date.now();
+    for (const child of this.#children.values()) {
+      if (child.proc.killed || child.status === "exited") continue;
+      if (child.lastPongAt && now - child.lastPongAt > 5_000) {
+        child.status = "unhealthy";
+        this.#invalidateFederationChildCache();
+        void this.#scheduleChildRestart(child, child.proc, "health-timeout");
+        return;
+      }
+      this.#sendToChild(child, {
+        type: "health.ping",
+        nonce: crypto.randomUUID(),
+        sentAt: now,
+      } satisfies AkanIpcMessage);
+    }
+  }
+
+  #forwardBuildRoute(childIdx: number, message: BuilderReq) {
+    const gatewayReqId = this.#nextBuilderReqId++;
+    this.#builderReqMap.set(gatewayReqId, { childIdx, childLocalId: message.id });
+    process.send?.({ ...message, id: gatewayReqId } satisfies BuilderReq);
+  }
+
+  #forwardBuildRouteResponse(message: BuilderRes) {
+    const request = this.#builderReqMap.get(message.id);
+    if (!request) {
+      this.logger.warn(`No child found for build-route response id=${message.id}`);
+      return;
+    }
+    this.#builderReqMap.delete(message.id);
+    const child = this.#children.get(request.childIdx);
+    if (!child || child.proc.killed) return;
+    this.#sendToChild(child, { ...message, id: request.childLocalId } satisfies BuilderRes);
+  }
+
+  #fanoutToFederation(message: AkanIpcMessage | BuilderMessage, exceptIdx?: number) {
+    for (const child of this.#children.values()) {
+      if (child.idx === exceptIdx) continue;
+      if (child.role === "federation" || child.role === "all") this.#sendToChild(child, message);
+    }
+  }
+
+  #fanoutToBatch(message: AkanIpcMessage) {
+    for (const child of this.#children.values()) {
+      if (child.role === "batch" || child.role === "all") {
+        if (this.#sendToChild(child, message) && message.type === "queue.wake") {
+          child.metrics.queueWakeCount = (child.metrics.queueWakeCount ?? 0) + 1;
+        }
+      }
+    }
+  }
+
+  #sendToChild(child: ChildState, message: AkanIpcMessage | BuilderMessage): boolean {
+    if (child.proc.killed || child.status === "exited") return false;
+    try {
+      child.proc.send(message);
+      return true;
+    } catch (error) {
+      this.logger.warn(
+        `Failed to send ${message.type} to child ${child.idx}/${child.role}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return false;
+    }
+  }
+
+  async #pipeOutput(
+    idx: number,
+    role: AkanChildRole,
+    stream: ReadableStream<Uint8Array> | null,
+    type: "stdout" | "stderr",
+  ) {
+    if (!stream) return;
+    const bufferKey = `${idx}:${type}`;
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const text = decoder.decode(value, { stream: true });
+        this.#writeChildOutput(idx, role, type, bufferKey, text);
+      }
+      const remaining = decoder.decode();
+      if (remaining) this.#writeChildOutput(idx, role, type, bufferKey, remaining);
+    } finally {
+      this.#flushChildOutput(idx, role, type, bufferKey);
+    }
+  }
+
+  #writeChildOutput(idx: number, role: AkanChildRole, type: "stdout" | "stderr", bufferKey: string, text: string) {
+    let buffered = `${this.#childOutputBuffers.get(bufferKey) ?? ""}${text}`;
+    while (true) {
+      const newlineIdx = buffered.indexOf("\n");
+      if (newlineIdx === -1) break;
+      const line = buffered.slice(0, newlineIdx + 1);
+      buffered = buffered.slice(newlineIdx + 1);
+      this.#writeChildOutputLine(idx, role, type, line);
+    }
+    if (buffered) this.#childOutputBuffers.set(bufferKey, buffered);
+    else this.#childOutputBuffers.delete(bufferKey);
+  }
+
+  #flushChildOutput(idx: number, role: AkanChildRole, type: "stdout" | "stderr", bufferKey: string) {
+    const buffered = this.#childOutputBuffers.get(bufferKey);
+    if (!buffered) return;
+    this.#childOutputBuffers.delete(bufferKey);
+    this.#writeChildOutputLine(idx, role, type, `${buffered}\n`);
+  }
+
+  #writeChildOutputLine(idx: number, role: AkanChildRole, type: "stdout" | "stderr", line: string) {
+    const prefixedLine = `[child:${idx} ${role}] [${type}] ${line}`;
+    process[type].write(prefixedLine);
+    this.#logWriter?.write(`${idx}-${role}`, AkanApp.#stripAnsi(prefixedLine));
+  }
+
+  static #stripAnsi(msg: string) {
+    return msg.replace(AkanApp.#ansiPattern, "");
+  }
+}

@@ -1,4 +1,4 @@
-import { by } from "@akanjs/document";
+import { by } from "akanjs/document";
 
 import * as cnst from "./encourageInfo.constant";
 

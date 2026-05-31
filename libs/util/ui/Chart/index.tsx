@@ -1,4 +1,4 @@
-import { Bar, ChartData, ChartType, Doughnut, Line, Pie } from "./index_";
+import { Bar, type ChartData, type ChartType, Doughnut, Line, Pie } from "./index_";
 
 export type ChartDataType<CType extends ChartType> = ChartData<CType, number[], string> & {
   labels: string[];

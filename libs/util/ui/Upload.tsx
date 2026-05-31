@@ -1,15 +1,15 @@
 "use client";
-import { clsx, device } from "@akanjs/client";
-import type { ProtoFile } from "@akanjs/constant";
-import { useCamera } from "@akanjs/next";
-import { BottomSheet, BottomSheetRef, Image } from "@akanjs/ui";
-import { usePage } from "@util/client";
-import { ChangeEvent, useRef, useState } from "react";
+import { usePage } from "@libs/util/client";
+import { clsx, Device } from "akanjs/client";
+import type { ProtoFile } from "akanjs/constant";
+import { BottomSheet, type BottomSheetRef, Image } from "akanjs/ui";
+import { useCamera } from "akanjs/webkit";
+import { type ChangeEvent, useRef, useState } from "react";
 import { AiFillFileImage, AiFillFileText, AiOutlineDelete } from "react-icons/ai";
 import { GiFiles } from "react-icons/gi";
 import { TbDragDrop } from "react-icons/tb";
 
-import { CropImage, CropRef } from "./CropImage";
+import { CropImage, type CropRef } from "./CropImage";
 
 interface UploadProps {
   onChange?: (fileList: FileList) => void;
@@ -90,7 +90,7 @@ export const File = ({
     <div className={clsx("relative flex flex-wrap gap-2", className)}>
       <div
         className={clsx("btn flex size-full flex-col items-center border-2 py-5", uploadClassName, {
-          "border-success border-2 border-dashed": isDragging && !isUploading,
+          "border-2 border-success border-dashed": isDragging && !isUploading,
           "hover:bg-base-200": isUploading,
           "bg-base-100": file?.id,
         })}
@@ -136,14 +136,10 @@ export const File = ({
           />
           {file?.id ? (
             <div key={file.id} className="flex flex-col items-center justify-center gap-2 text-gray-400">
-              <>
-                <>
-                  <AiFillFileText className="text-[75px]" />
-                  <div>
-                    <div className="text-sm">{file.filename}</div>
-                  </div>
-                </>
-              </>
+              <AiFillFileText className="text-[75px]" />
+              <div>
+                <div className="text-sm">{file.filename}</div>
+              </div>
             </div>
           ) : (
             <EmptyUpload
@@ -160,7 +156,7 @@ export const File = ({
               {
                 "opacity-0": !isUploading,
                 "opacity-100": isUploading,
-              }
+              },
             )}
           >
             <div className="flex w-[30%] flex-col items-center justify-center gap-2">
@@ -245,8 +241,8 @@ export const FileList = ({
       <div className={clsx("relative flex size-full flex-wrap gap-2", className)}>
         {fileList && fileList.length > 0 ? (
           <div
-            className={clsx("border-base-300 relative size-full rounded-md border-2 duration-200", {
-              "border-success border-2 border-dashed": isDragging && !isUploading,
+            className={clsx("relative size-full rounded-md border-2 border-base-300 duration-200", {
+              "border-2 border-success border-dashed": isDragging && !isUploading,
             })}
           >
             <div className={clsx("relative size-full overflow-x-auto", {})}>
@@ -271,51 +267,47 @@ export const FileList = ({
               >
                 <tbody className="w-full rounded-md">
                   <tr className="w-full">
-                    <td className="w-[70%] text-sm font-semibold md:w-[50%] md:text-base">filename</td>
-                    <td className="text-center text-sm font-semibold md:text-base">size</td>
-                    <td className="text-center text-sm font-semibold md:text-base">status</td>
-                    <td className="text-center text-sm font-semibold md:text-base">-</td>
+                    <td className="w-[70%] font-semibold text-sm md:w-[50%] md:text-base">filename</td>
+                    <td className="text-center font-semibold text-sm md:text-base">size</td>
+                    <td className="text-center font-semibold text-sm md:text-base">status</td>
+                    <td className="text-center font-semibold text-sm md:text-base">-</td>
                   </tr>
                   {fileList.map((file) => {
                     const isUploading = file.status === "uploading";
                     // const isUploading = true;
                     return (
-                      <>
-                        <tr
-                          className={clsx("", {
-                            "opacity-50": isUploading,
-                            "opacity-100": !isUploading,
-                          })}
-                        >
-                          <td className="w-[70%] truncate text-xs md:w-[50%] md:text-sm">{file.filename}</td>
-                          <td className="text-center text-xs md:text-sm">{formatSize(file.size)}</td>
-                          <td className="text-center align-middle text-xs md:text-sm">
-                            <div className="badge badge-info">
-                              {file.status}
-                              <div
-                                className={clsx("loading loading-sm loading-spinner", {
-                                  hidden: !isUploading,
-                                  block: isUploading,
-                                })}
-                              />
-                            </div>
-                          </td>
-                          <td className="text-center align-middle text-sm">
+                      <tr
+                        key={file.id}
+                        className={clsx("", {
+                          "opacity-50": isUploading,
+                          "opacity-100": !isUploading,
+                        })}
+                      >
+                        <td className="w-[70%] truncate text-xs md:w-[50%] md:text-sm">{file.filename}</td>
+                        <td className="text-center text-xs md:text-sm">{formatSize(file.size)}</td>
+                        <td className="text-center align-middle text-xs md:text-sm">
+                          <div className="badge badge-info">
+                            {file.status}
                             <div
-                              className="btn btn-xs btn-error btn-square btn-outline"
-                              onClick={() => onRemove?.(file)}
-                            >
-                              <AiOutlineDelete />
-                            </div>
-                          </td>
-                        </tr>
-                      </>
+                              className={clsx("loading loading-sm loading-spinner", {
+                                hidden: !isUploading,
+                                block: isUploading,
+                              })}
+                            />
+                          </div>
+                        </td>
+                        <td className="text-center align-middle text-sm">
+                          <div className="btn btn-xs btn-error btn-square btn-outline" onClick={() => onRemove?.(file)}>
+                            <AiOutlineDelete />
+                          </div>
+                        </td>
+                      </tr>
                     );
                   })}
                 </tbody>
               </table>
             </div>
-            <div className="border-base-300 mx-2 border-t-2 p-4">
+            <div className="mx-2 border-base-300 border-t-2 p-4">
               <button
                 onClick={() => {
                   inputFileRef.current?.click();
@@ -329,7 +321,7 @@ export const FileList = ({
         ) : (
           <div
             className={clsx("btn group flex size-full flex-col items-center border-2 py-5", uploadClassName, {
-              "border-success border-2 border-dashed": isDragging && !isUploading,
+              "border-2 border-success border-dashed": isDragging && !isUploading,
               "hover:bg-base-200": isUploading,
             })}
             onClick={() => {
@@ -424,6 +416,7 @@ const UploadImage = ({
     setImage(undefined);
   };
   const onSelectImage = async () => {
+    const device = await Device.getDevice();
     if (Object.keys(device.info).length === 0 || device.info.platform === "web") inputRef.current?.click();
     else {
       const photo = await getPhoto();
@@ -465,118 +458,114 @@ const UploadImage = ({
           className="hidden"
           type="file"
         />
-        <>
-          {protoFile && protoFile.status === "active" ? (
-            <>
-              {renderComplete ? (
-                renderComplete(protoFile)
-              ) : (
-                <div
-                  onClick={() => {
-                    onRemove(protoFile as unknown as File);
-                  }}
-                  className="group relative flex size-56"
-                >
-                  <Image
-                    className={clsx("bg-base-100 object-cover px-0", {
-                      "rounded-full": styleType === "circle",
-                      "rounded-md": styleType === "square",
-                    })}
-                    file={protoFile}
-                  />
+        {protoFile && protoFile.status === "active" ? (
+          renderComplete ? (
+            renderComplete(protoFile)
+          ) : (
+            <div
+              onClick={() => {
+                onRemove(protoFile as unknown as File);
+              }}
+              className="group relative flex size-56"
+            >
+              <Image
+                className={clsx("bg-base-100 object-cover px-0", {
+                  "rounded-full": styleType === "circle",
+                  "rounded-md": styleType === "square",
+                })}
+                file={protoFile}
+              />
 
-                  <button
+              <button
+                className={clsx(
+                  "absolute flex size-full flex-wrap items-center justify-center opacity-0 backdrop-blur-lg group-hover:animate-fadeIn",
+                  {
+                    "rounded-full": styleType === "circle",
+                    "rounded-md": styleType === "square",
+                  },
+                )}
+              >
+                <AiOutlineDelete className="text-3xl text-primary/0 transition duration-300 group-hover:text-error" />
+              </button>
+            </div>
+          )
+        ) : (
+          <div className="relative flex w-full">
+            <button
+              className={clsx("group aspect-1 size-56 bg-base-100 px-0 duration-300", {
+                "rounded-full": styleType === "circle",
+                "rounded-md": styleType === "square",
+
+                "cursor-not-allowed": !isAccepted,
+              })}
+            >
+              <div
+                onClick={() => {
+                  void onSelectImage();
+                }}
+                onDragEnter={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDragging(true);
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDragging(true);
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDragging(false);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDragging(false);
+                  if (isUploading) return;
+                  const files = e.dataTransfer.files;
+                  if (files.length > 0) {
+                    const file = files[0];
+                    if (accept.includes(file.type)) {
+                      void onSave(file);
+                    } else setIsAccepted(false);
+                  }
+                }}
+                className={clsx("btn group relative flex size-full items-center justify-center md:text-lg", {
+                  "rounded-full": styleType === "circle",
+                  "rounded-md": styleType === "square",
+                  "border-2 border-success border-dashed": isDragging,
+                })}
+              >
+                {renderEmpty ? (
+                  renderEmpty(onSelectImage)
+                ) : (
+                  <EmptyUpload
+                    isDragging={isDragging}
+                    type="image"
+                    desc={l("util.uploadImageClick")}
+                    dndDesc={l("util.uploadImageDrop")}
+                  />
+                )}
+
+                {protoFile && protoFile.status === "uploading" ? (
+                  <div
                     className={clsx(
-                      "group-hover:animate-fadeIn absolute flex size-full flex-wrap items-center justify-center opacity-0 backdrop-blur-lg",
+                      "absolute top-0 left-0 z-[100] flex size-full flex-col items-center justify-center gap-2 bg-base-100/30 px-10 backdrop-blur-sm",
                       {
                         "rounded-full": styleType === "circle",
                         "rounded-md": styleType === "square",
-                      }
+                      },
                     )}
                   >
-                    <AiOutlineDelete className="text-primary/0 group-hover:text-error text-3xl transition duration-300" />
-                  </button>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="relative flex w-full">
-              <button
-                className={clsx("bg-base-100 aspect-1 group size-56 px-0 duration-300", {
-                  "rounded-full": styleType === "circle",
-                  "rounded-md": styleType === "square",
-
-                  "cursor-not-allowed": !isAccepted,
-                })}
-              >
-                <div
-                  onClick={() => {
-                    void onSelectImage();
-                  }}
-                  onDragEnter={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setIsDragging(true);
-                  }}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setIsDragging(true);
-                  }}
-                  onDragLeave={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setIsDragging(false);
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setIsDragging(false);
-                    if (isUploading) return;
-                    const files = e.dataTransfer.files;
-                    if (files.length > 0) {
-                      const file = files[0];
-                      if (accept.includes(file.type)) {
-                        void onSave(file);
-                      } else setIsAccepted(false);
-                    }
-                  }}
-                  className={clsx("btn group relative flex size-full items-center justify-center md:text-lg", {
-                    "rounded-full": styleType === "circle",
-                    "rounded-md": styleType === "square",
-                    "border-success border-2 border-dashed": isDragging,
-                  })}
-                >
-                  {renderEmpty ? (
-                    renderEmpty(onSelectImage)
-                  ) : (
-                    <EmptyUpload
-                      isDragging={isDragging}
-                      type="image"
-                      desc={l("util.uploadImageClick")}
-                      dndDesc={l("util.uploadImageDrop")}
-                    />
-                  )}
-
-                  {protoFile && protoFile.status === "uploading" ? (
-                    <div
-                      className={clsx(
-                        "bg-base-100/30 absolute top-0 left-0 z-[100] flex size-full flex-col items-center justify-center gap-2 px-10 backdrop-blur-sm",
-                        {
-                          "rounded-full": styleType === "circle",
-                          "rounded-md": styleType === "square",
-                        }
-                      )}
-                    >
-                      <div className="loading loading-spinner loading-lg" />
-                      <Progress value={protoFile.progress ?? 0} max={100} />
-                    </div>
-                  ) : null}
-                </div>
-              </button>
-            </div>
-          )}
-        </>
+                    <div className="loading loading-spinner loading-lg" />
+                    <Progress value={protoFile.progress ?? 0} max={100} />
+                  </div>
+                ) : null}
+              </div>
+            </button>
+          </div>
+        )}
       </div>
       {type === "crop" ? (
         <BottomSheet
@@ -621,7 +610,7 @@ interface UploadImagesProps {
 }
 
 const UploadImages = ({ multiple, fileList, disabled, styleType, render, onSave, onRemove }: UploadImagesProps) => {
-  if (disabled) return <></>;
+  if (disabled) return null;
   return (
     <div className="flex flex-wrap">
       {!fileList ? (
@@ -657,9 +646,9 @@ interface ProgressProps {
 const Progress = ({ value, max }: ProgressProps) => {
   return (
     <div className="relative h-2 w-full overflow-hidden rounded-xl">
-      <div className="bg-primary/20 absolute size-full" />
+      <div className="absolute size-full bg-primary/20" />
       <div
-        className="bg-primary/80 absolute size-full transition-all duration-500"
+        className="absolute size-full bg-primary/80 transition-all duration-500"
         style={{ width: `${(value / max) * 100}%` }}
       />
     </div>
@@ -677,17 +666,17 @@ const EmptyUpload = ({ type, isDragging, desc, dndDesc }: EmptyUploadProps) => {
   return (
     <div
       className={clsx(
-        "group-hover:text-base-100 flex flex-col items-center justify-center gap-5 text-[45px] text-gray-400 duration-300",
+        "flex flex-col items-center justify-center gap-5 text-[45px] text-gray-400 duration-300 group-hover:text-base-100",
         {
           "text-success": isDragging,
-        }
+        },
       )}
     >
       <div className="flex h-full items-center justify-center gap-4">
         {type === "image" ? <AiFillFileImage /> : type === "file" ? <AiFillFileText /> : <GiFiles />}
       </div>
       <div
-        className={clsx("group-hover:text-base-100 w-fit text-sm text-gray-400 duration-300", {
+        className={clsx("w-fit text-gray-400 text-sm duration-300 group-hover:text-base-100", {
           "text-success": isDragging,
         })}
       >
@@ -695,10 +684,10 @@ const EmptyUpload = ({ type, isDragging, desc, dndDesc }: EmptyUploadProps) => {
       </div>
       <div
         className={clsx(
-          "group-hover:text-base-100 flex flex-row items-center justify-center gap-2 rounded-md border border-dashed px-1 py-1 text-[8px] text-gray-400 duration-300",
+          "flex flex-row items-center justify-center gap-2 rounded-md border border-dashed px-1 py-1 text-[8px] text-gray-400 duration-300 group-hover:text-base-100",
           {
-            "text-success border-success": isDragging,
-          }
+            "border-success text-success": isDragging,
+          },
         )}
       >
         {dndDesc}

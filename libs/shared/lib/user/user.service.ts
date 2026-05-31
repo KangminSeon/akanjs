@@ -1,10 +1,10 @@
-import { Dayjs } from "@akanjs/base";
-import { serve } from "@akanjs/service";
-import { type Account } from "@akanjs/signal";
-import { type Self } from "@shared/base";
-import type { SsoCookie } from "@shared/nest";
-import { randomCode, randomString } from "@util/common";
-import type { EmailApi, PurpleApi } from "@util/nest";
+import type { Self } from "@libs/shared/base";
+import type { SsoCookie } from "@libs/shared/srvkit";
+import { randomCode, randomString } from "@libs/util/common";
+import type { EmailApi, PurpleApi } from "@libs/util/srvkit";
+import type { Dayjs } from "akanjs/base";
+import type { Account } from "akanjs/fetch";
+import { serve } from "akanjs/service";
 
 import * as cnst from "../cnst";
 import * as db from "../db";
@@ -20,7 +20,8 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
   emailApi: use<EmailApi>(),
   purpleApi: use<PurpleApi>(),
 })) {
-  async _postRemove(user: db.User) {
+  override async _postRemove(user: db.User) {
+    await this.userModel.revokeRefreshSessions(user.id);
     if (user.status === "active") await this.summaryService.decValue("activeUser");
     return user;
   }
@@ -40,6 +41,46 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
       removedAt: user.removedAt ?? null,
     };
   }
+  protected _stripTokenMeta(account: Partial<Account> = {}) {
+    const { exp, iat, jti, sid, tokenType, ...rest } = account as Account & {
+      exp?: number;
+      iat?: number;
+      jti?: string;
+      sid?: string;
+      tokenType?: string;
+    };
+    return rest;
+  }
+  async _issueUserToken(user: db.User, account?: Account, userAgent?: string): Promise<db.util.AccessToken> {
+    const { refreshToken, refreshTokenHash, refreshTokenExpiresAt } = this.securityService.createRefreshToken();
+    const session = await this.userModel.createRefreshSession(
+      user.id,
+      refreshTokenHash,
+      refreshTokenExpiresAt,
+      userAgent,
+    );
+    const self = await this.makeSelf(user);
+    const accessToken = await this.securityService.signAccessToken(
+      { ...this._stripTokenMeta(account), self },
+      { sid: session.id, jti: crypto.randomUUID() },
+    );
+    return { ...accessToken, refreshToken };
+  }
+  async refreshUserToken(refreshToken: string, account?: Account): Promise<db.util.AccessToken> {
+    const nextRefreshToken = this.securityService.createRefreshToken();
+    const session = await this.userModel.rotateRefreshSession(
+      this.securityService.hashRefreshToken(refreshToken),
+      nextRefreshToken.refreshTokenHash,
+      nextRefreshToken.refreshTokenExpiresAt,
+    );
+    const user = await this.getActiveUser(session.subjectId);
+    const self = await this.makeSelf(user);
+    const accessToken = await this.securityService.signAccessToken(
+      { ...this._stripTokenMeta(account), self },
+      { sid: session.id, jti: crypto.randomUUID() },
+    );
+    return { ...accessToken, refreshToken: nextRefreshToken.refreshToken };
+  }
   async getPrepareUser(userId: string) {
     return await this.userModel.getPrepareUser(userId);
   }
@@ -51,7 +92,7 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
   }
   async getAccountId<Throw extends boolean = true>(
     userId: string,
-    throwError: Throw = true as Throw
+    throwError: Throw = true as Throw,
   ): Promise<Throw extends true ? string : string | null> {
     return await this.userModel.getAccountId(userId, throwError);
   }
@@ -131,21 +172,25 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
     const user = await this.getPrepareUser(userId);
     await this.userModel.setPasswordInPrepareUser(user.id, accountId, password);
   }
-  async signinWithPassword(accountId: string, password: string, account: Account): Promise<cnst.util.AccessToken> {
+  async signinWithPassword(accountId: string, password: string, account: Account): Promise<db.util.AccessToken> {
     const user = await this.userModel.getUserByPassword(accountId, password);
     if (user.status !== "active") throw new Error("Not activated yet");
-    const self = await this.makeSelf(user);
-    return this.securityService.addJwt({ self }, account);
+    return await this._issueUserToken(user, account);
+  }
+  async signoutUser(account: Account<{ self?: Self; sid?: string }>) {
+    if (account.self) await this.userModel.revokeRefreshSession(account.self.id, account.sid);
+    return { jwt: "" };
   }
   async changePassword(userId: string, password: string, prevPassword: string) {
     const accountId = await this.userModel.getAccountId(userId);
     const user = await this.userModel.getUserByPassword(accountId, prevPassword);
     await this.userModel.setPasswordInActiveUser(user.id, password);
+    await this.userModel.revokeRefreshSessions(user.id);
     return user;
   }
   async requestPhoneCodeForSetPassword(userId: string, phone: string, hash: string) {
     const user = await this.getActiveUser(userId);
-    await this.#registerPhoneCode(user.id, phone, "setPasswordWithSignToken", hash);
+    await this._registerPhoneCode(user.id, phone, "setPasswordWithSignToken", hash);
   }
   async getSignTokenForSetPassword(userId: string, phone: string, phoneCode: string) {
     const user = await this.userModel.getUser(userId);
@@ -158,6 +203,7 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
     const isVerified = await this.userModel.verifySignToken(userId, signToken);
     if (!isVerified) throw new Error("Sign token is invalid");
     await this.userModel.setPasswordInActiveUser(userId, password);
+    await this.userModel.revokeRefreshSessions(userId);
   }
   async resetPassword(accountId: string): Promise<boolean> {
     const isResetable = await this.userModel.isResetable(accountId);
@@ -165,6 +211,7 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
     const user = await this.userModel.pickByAccountId(accountId, ["active"]);
     const password = randomString();
     await this.userModel.setPasswordInActiveUser(user.id, password);
+    await this.userModel.revokeRefreshSessions(user.id);
     await this.emailApi.sendPasswordResetMail(accountId, password, this.host);
     await this.userModel.logResetTime(user.id);
     return true;
@@ -181,7 +228,7 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
     const setting = await this.settingService.getActiveSetting();
     const user = await this.getPrepareUser(userId);
     await this.userModel.setPhoneInPrepareUser(user.id, phone, setting.resignupDays);
-    await this.#registerPhoneCode(user.id, phone, "setPhoneInPrepareUser", hash);
+    await this._registerPhoneCode(user.id, phone, "setPhoneInPrepareUser", hash);
   }
   async verifyPhoneInPrepareUser(userId: string, phone: string, phoneCode: string) {
     const user = await this.getPrepareUser(userId);
@@ -195,7 +242,7 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
   }
   async requestPhoneCodeForSignin(userId: string, phone: string, hash: string) {
     const user = await this.getActiveUser(userId);
-    await this.#registerPhoneCode(user.id, phone, "signinWithSignToken", hash);
+    await this._registerPhoneCode(user.id, phone, "signinWithSignToken", hash);
   }
   async getSignTokenForSignin(userId: string, phone: string, phoneCode: string) {
     const user = await this.userModel.getUser(userId);
@@ -209,10 +256,10 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
 
   //*========================================================================*//
   //*====================== SignToken Signing Area =======================*//
-  async #registerPhoneCode(userId: string, phone: string, purpose: string, hash: string) {
+  private async _registerPhoneCode(userId: string, phone: string, purpose: string, hash: string) {
     const user = await this.userModel.getUser(userId);
     const dryrun = cnst.MASTER_PHONES.includes(phone);
-    const phoneCode = dryrun ? cnst.MASTER_PHONECODE : randomCode(6);
+    const phoneCode = dryrun && cnst.MASTER_PHONECODE ? cnst.MASTER_PHONECODE : randomCode(6);
     await this.userModel.registerPhoneCode(user.id, phone, purpose, phoneCode);
     if (!dryrun) await this.purpleApi.sendPhoneCode(phone, phoneCode, hash);
   }
@@ -220,8 +267,7 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
     const user = await this.userModel.getUser(userId);
     const isVerified = await this.userModel.verifySignToken(user.id, signToken);
     if (!isVerified) throw new Error("Invalid sign token");
-    const self = await this.makeSelf(user);
-    return this.securityService.addJwt({ self }, account);
+    return await this._issueUserToken(user, account);
   }
   //*====================== SignToken Signing Area =======================*//
   //*========================================================================*//
@@ -232,20 +278,25 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
     accountId: string,
     ssoType: cnst.SsoType["value"],
     ssoCookie: SsoCookie,
-    account?: Account
+    account?: Account,
   ): Promise<{ cookie?: { [key: string]: string }; redirect: string }> {
     const { prepareUserId, ssoFor, signinRedirect, signupRedirect, adminRedirect, errorRedirect } = ssoCookie;
     try {
       if (ssoFor === "admin") {
         const accessToken = await this.adminService.ssoSigninAdmin(accountId, account);
-        return { cookie: { jwt: accessToken.jwt }, redirect: adminRedirect ?? "/admin" };
+        return {
+          cookie: { jwt: accessToken.jwt, adminRefreshToken: accessToken.refreshToken ?? "" },
+          redirect: adminRedirect ?? "/admin",
+        };
       } else {
         const userId = await this.userModel.findIdByAccountId(accountId, ["active", "restricted", "dormant"]);
         if (userId) {
           const user = await this.userModel.getActiveUserBySso(accountId, ssoType);
-          const self = await this.makeSelf(user);
-          const accessToken = this.securityService.addJwt({ self }, account);
-          return { cookie: { jwt: accessToken.jwt }, redirect: signinRedirect };
+          const accessToken = await this._issueUserToken(user, account);
+          return {
+            cookie: { jwt: accessToken.jwt, userRefreshToken: accessToken.refreshToken ?? "" },
+            redirect: signinRedirect,
+          };
         } else {
           const user = await this.generatePrepareUser(prepareUserId);
           await this.userModel.setSsoInPrepareUser(user.id, accountId, ssoType);
@@ -264,9 +315,8 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
     const user = await this.getPrepareUser(userId);
     // TODO: check minimum verification levels
     await user.set({ status: "active" }).save();
-    const self = await this.makeSelf(user);
     await this.summaryService.moveValue("prepareUser", "activeUser");
-    return this.securityService.addJwt({ self }, account);
+    return await this._issueUserToken(user, account);
   }
   async setLeaveInfo(userId: string, leaveInfo: db.LeaveInfo) {
     const user = await this.userModel.getUser(userId);
@@ -304,7 +354,10 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
     const user = await this.userModel.getUser(userId);
     const accountId = await this.userModel.getAccountId(user.id);
     if (user.status === "prepare") await this.userModel.setPasswordInPrepareUser(user.id, accountId, password);
-    else await this.userModel.setPasswordInActiveUser(user.id, password);
+    else {
+      await this.userModel.setPasswordInActiveUser(user.id, password);
+      await this.userModel.revokeRefreshSessions(user.id);
+    }
   }
   async setPhone(userId: string, phone: string) {
     const user = await this.userModel.getUser(userId);
@@ -313,7 +366,7 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
   }
   async getAccessTokenByAdmin(userId: string) {
     const user = await this.userModel.getUser(userId);
-    return this.securityService.addJwt({ self: await this.makeSelf(user) });
+    return await this._issueUserToken(user);
   }
   async getEncourageInfo(userId: string) {
     return await this.userModel.getEncourageInfo(userId);
@@ -372,7 +425,10 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
   //*================================================================*//
 
   async setRemoteAuthToken(remoteId: string, account: Account) {
-    const { jwt } = this.securityService.sign(account);
+    const { jwt } = await this.securityService.signAccessToken(this._stripTokenMeta(account), {
+      sid: `remote:${remoteId}`,
+      jti: crypto.randomUUID(),
+    });
     await this.userModel.setRemoteAuthToken(remoteId, jwt);
   }
   async getRemoteAuthToken(remoteId: string) {

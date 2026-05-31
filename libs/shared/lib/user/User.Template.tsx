@@ -1,11 +1,11 @@
 "use client";
-import { clsx } from "@akanjs/client";
-import type { ProtoFile } from "@akanjs/constant";
-import { Button, Image, Input, Layout, Radio } from "@akanjs/ui";
-import { cnst, msg, st, usePage } from "@shared/client";
-import { Field, Only } from "@shared/ui";
-import { formatPhone, isEmail, isPhoneNumber } from "@util/common";
-import { CodeInput, Inform, Upload } from "@util/ui";
+import { cnst, msg, st, usePage } from "@libs/shared/client";
+import { Field, Only } from "@libs/shared/ui";
+import { CodeInput, Upload } from "@libs/util/ui";
+import { clsx } from "akanjs/client";
+import { formatPhone, isEmail, isPhoneNumber } from "akanjs/common";
+import type { ProtoFile } from "akanjs/constant";
+import { Button, Image, Input, Layout, Radio } from "akanjs/ui";
 import { useEffect, useRef, useState } from "react";
 import { AiOutlineClose, AiOutlineEdit, AiOutlinePlus, AiOutlineSave } from "react-icons/ai";
 
@@ -343,7 +343,7 @@ export const SubmitNicknameOfPrepareUser = ({ redirect, userId, className }: Sub
   const userForm = st.use.userForm();
   return (
     <button
-      className={clsx("btn bg-primary-light border-primary-light", className)}
+      className={clsx("btn border-primary-light bg-primary-light", className)}
       disabled={!userForm.nickname || userForm.nickname.length < 2 || userForm.nickname.length > 20}
       onClick={() => {
         void st.do.setNicknameOfPrepareUser(userId, { redirect });
@@ -362,7 +362,7 @@ export const SubmitNickname = ({ redirect, className }: SubmitNicknameProps) => 
   const userForm = st.use.userForm();
   return (
     <button
-      className={clsx("btn bg-primary-light border-primary-light", className)}
+      className={clsx("btn border-primary-light bg-primary-light", className)}
       disabled={!userForm.nickname || userForm.nickname.length < 2 || userForm.nickname.length > 20}
       onClick={() => {
         void st.do.setNicknameOfSelf({ redirect });
@@ -395,20 +395,20 @@ export const AppliedImages = () => {
             renderEmpty={() => (
               <div
                 className={clsx(
-                  "aspect-1 flex w-full items-center justify-center rounded-2xl bg-gray-200 duration-300 hover:opacity-50",
-                  { "border-primary border-4": i === 0 }
+                  "flex aspect-1 w-full items-center justify-center rounded-2xl bg-gray-200 duration-300 hover:opacity-50",
+                  { "border-4 border-primary": i === 0 },
                 )}
               >
-                <AiOutlinePlus className="text-primary text-6xl font-bold opacity-60" />
+                <AiOutlinePlus className="font-bold text-6xl text-primary opacity-60" />
                 {i === 0 && (
-                  <div className="bg-primary absolute top-2 left-2 rounded-md px-1 text-xs text-white">대표 사진</div>
+                  <div className="absolute top-2 left-2 rounded-md bg-primary px-1 text-white text-xs">대표 사진</div>
                 )}
               </div>
             )}
             renderComplete={(file) => (
               <div
                 className={clsx("aspect-1 w-full overflow-hidden rounded-2xl", {
-                  "border-primary border-4": i === 0,
+                  "border-4 border-primary": i === 0,
                 })}
               >
                 <Image file={file} className="size-full object-cover" />
@@ -430,8 +430,8 @@ export const AppliedImages = () => {
               onRemove(i + 2);
             }}
             renderEmpty={() => (
-              <div className="aspect-1 text-primary flex w-full items-center justify-center rounded-xl bg-gray-200 duration-300 hover:opacity-50">
-                <AiOutlinePlus className="text-2xl font-bold opacity-60" />
+              <div className="flex aspect-1 w-full items-center justify-center rounded-xl bg-gray-200 text-primary duration-300 hover:opacity-50">
+                <AiOutlinePlus className="font-bold text-2xl opacity-60" />
               </div>
             )}
             renderComplete={(file) => (
@@ -465,7 +465,7 @@ export const SubmitAppliedImages = ({ redirect }: SubmitAppliedImagesProps) => {
   const userForm = st.use.userForm();
   return (
     <Button
-      className="bg-primary-light border-primary-light"
+      className="border-primary-light bg-primary-light"
       disabled={userForm.appliedImages.length < 2}
       onClick={() => {
         void st.do.setAppliedImagesOfSelf(userForm.appliedImages, { redirect });
@@ -648,53 +648,6 @@ export const SetPhoneByAdmin = ({ className, phone }: SetPhoneByAdminProps) => {
   );
 };
 
-interface AgreePoliciesProps {
-  className?: string;
-  companyName: string;
-  serviceName: string;
-  startDateStr?: string;
-  policy?: {
-    company: {
-      ceo: string;
-      address: string;
-      phone: string;
-    };
-    customerService: {
-      department: string;
-      email: string;
-    };
-    privacyManager: {
-      name: string;
-      phone: string;
-      email: string;
-    };
-    privacyAuthority: {
-      name: string;
-      phone: string;
-      email: string;
-    };
-    locationAuthority: {
-      name: string;
-      email: string;
-    };
-  };
-}
-export const AgreePolicies = ({ className, companyName, serviceName, startDateStr, policy }: AgreePoliciesProps) => {
-  const agreePolicies = st.use.agreePolicies();
-  return (
-    <Inform.AccordionPolicy
-      value={agreePolicies}
-      onChange={(value) => {
-        st.do.setAgreePolicies(value);
-      }}
-      companyName={companyName}
-      serviceName={serviceName}
-      startDateStr={startDateStr}
-      policy={policy}
-    />
-  );
-};
-
 interface LeaveInfoProps {
   className?: string;
   redirect?: string;
@@ -704,7 +657,7 @@ interface LeaveInfoProps {
 export const LeaveInfo = ({ className, redirect, leaveReasons, comeBackReasons }: LeaveInfoProps) => {
   const leaveInfo = st.use.leaveInfo();
   useEffect(() => {
-    st.do.setLeaveInfo(cnst.leaveInfo.getDefault());
+    st.do.setLeaveInfo(new cnst.LeaveInfo());
   }, []);
   if (leaveInfo.type === "noReply")
     return (
@@ -826,8 +779,8 @@ export const Reason = ({
       <Radio
         className="flex flex-col items-start justify-start gap-5 px-2"
         value={reason}
-        onChange={(reason: string) => {
-          setReason(reason);
+        onChange={(reason) => {
+          if (reason) setReason(String(reason));
         }}
       >
         {reasons.map((reason, idx) => (
@@ -864,8 +817,8 @@ export const Satisfaction = ({ className, value, onChange }: SatisfactionProps) 
       <Radio
         className="flex flex-col items-start justify-start gap-5 px-2"
         value={satisfaction}
-        onChange={(satisfaction: number) => {
-          setSatisfaction(satisfaction);
+        onChange={(satisfaction) => {
+          if (typeof satisfaction !== "string") setSatisfaction(satisfaction);
         }}
       >
         {satisfyLevel.map((answer, idx) => (

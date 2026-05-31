@@ -1,5 +1,5 @@
-import { dayjs, enumOf, Int } from "@akanjs/base";
-import { ProtoFile, via } from "@akanjs/constant";
+import { dayjs, enumOf, Int } from "akanjs/base";
+import { type ProtoFile, via } from "akanjs/constant";
 
 export class FileStatus extends enumOf("fileStatus", ["active", "uploading"]) {}
 
@@ -25,7 +25,7 @@ export class FileObject
 export class LightFile extends via(
   FileObject,
   ["filename", "imageSize", "url", "size", "abstractData", "status"] as const,
-  (resolve) => ({})
+  (resolve) => ({}),
 ) {
   getFileSizeStr() {
     const size = this.size;

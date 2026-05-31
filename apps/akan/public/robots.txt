@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api
+Disallow: /_akan
+Disallow: /admin
+Disallow: /manager
+Disallow: /private

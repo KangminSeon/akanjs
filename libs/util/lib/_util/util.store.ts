@@ -1,9 +1,9 @@
-import { store } from "@akanjs/store";
+import { store } from "akanjs/store";
 
 import * as cnst from "../cnst";
-import { RootStore } from "../st";
+import type { RootStore } from "../st";
 
-export class UtilStore extends store("util" as const, {
+export class UtilStore extends store("util" as const, () => ({
   notiPermission: "default" as NotificationPermission,
   mapCenter: { type: "Point", coordinates: [127.0016985, 37.5642135] } as cnst.Coordinate,
   mapZoom: 8,
@@ -14,7 +14,7 @@ export class UtilStore extends store("util" as const, {
     maxLng: number;
   },
   mapPanControl: true,
-}) {
+})) {
   fitToScreenByCoordinate(...coordinates: cnst.Coordinate[]) {
     (this as unknown as RootStore).set({ mapBounds: cnst.Coordinate.getBounds(...coordinates) });
   }

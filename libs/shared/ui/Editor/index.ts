@@ -1,7 +1,8 @@
-import { Slate, SlateContent, Yoopta } from "./index_";
+import { Slate, SlateContent, Yoopta, YooptaContent } from "./index_";
 
 export const Editor = {
   Slate,
   SlateContent,
   Yoopta,
+  YooptaContent,
 };

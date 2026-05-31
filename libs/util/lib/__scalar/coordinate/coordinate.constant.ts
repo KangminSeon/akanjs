@@ -1,5 +1,5 @@
-import { enumOf, Float } from "@akanjs/base";
-import { via } from "@akanjs/constant";
+import { enumOf, Float } from "akanjs/base";
+import { via } from "akanjs/constant";
 
 export class CoordinateType extends enumOf("coordinateType", ["Point"] as const) {}
 
@@ -11,7 +11,7 @@ export class Coordinate extends via((field) => ({
   static getTotalDistanceKm(...coords: Coordinate[]) {
     return coords.reduce((acc, cur, idx) => {
       if (idx === 0) return 0;
-      return acc + this.getDistanceKm(coords[idx - 1], cur);
+      return acc + Coordinate.getDistanceKm(coords[idx - 1], cur);
     }, 0);
   }
   static getDistanceKm(loc1: Coordinate, loc2: Coordinate) {
@@ -31,18 +31,18 @@ export class Coordinate extends via((field) => ({
     return distance;
   }
   static getDistanceM(loc1: Coordinate, loc2: Coordinate) {
-    const km = this.getDistanceKm(loc1, loc2);
+    const km = Coordinate.getDistanceKm(loc1, loc2);
     return km * 1000;
   }
   static get3DDistanceM(loc1: Coordinate, loc2: Coordinate) {
-    const groundDistance = this.getDistanceM(loc1, loc2);
+    const groundDistance = Coordinate.getDistanceM(loc1, loc2);
     const altitudeDistance = Math.abs(loc1.altitude - loc2.altitude);
     return Math.sqrt(groundDistance ** 2 + altitudeDistance ** 2);
   }
   static getTotal3DDistanceM(...coordinates: Coordinate[]) {
     return coordinates.reduce((acc, cur, idx) => {
       if (idx === 0) return 0;
-      return acc + this.get3DDistanceM(coordinates[idx - 1], cur);
+      return acc + Coordinate.get3DDistanceM(coordinates[idx - 1], cur);
     }, 0);
   }
   static getBounds(...coordinates: Coordinate[]) {
@@ -68,7 +68,7 @@ export class Coordinate extends via((field) => ({
     const lon = lon1 + (lon2 - lon1) * ratio;
     const lat = lat1 + (lat2 - lat1) * ratio;
     const altitude = loc1.altitude + (loc2.altitude - loc1.altitude) * ratio;
-    return { type: "Point", coordinates: [lon, lat], altitude };
+    return new Coordinate({ type: "Point", coordinates: [lon, lat], altitude });
   }
   static moveMeters(loc: Coordinate, x: number, y: number, z: number = 0): Coordinate {
     const [lon, lat] = loc.coordinates;
@@ -101,7 +101,7 @@ export class Coordinate extends via((field) => ({
     // Calculate target latitude using spherical trigonometry
     const targetLatRad = Math.asin(
       Math.sin(startLatRad) * Math.cos(angularDistance) +
-        Math.cos(startLatRad) * Math.sin(angularDistance) * Math.cos(headingRad)
+        Math.cos(startLatRad) * Math.sin(angularDistance) * Math.cos(headingRad),
     );
 
     // Calculate target longitude
@@ -109,30 +109,30 @@ export class Coordinate extends via((field) => ({
       startLngRad +
       Math.atan2(
         Math.sin(headingRad) * Math.sin(angularDistance) * Math.cos(startLatRad),
-        Math.cos(angularDistance) - Math.sin(startLatRad) * Math.sin(targetLatRad)
+        Math.cos(angularDistance) - Math.sin(startLatRad) * Math.sin(targetLatRad),
       );
 
     // Convert back to degrees
     const targetLat = (targetLatRad * 180) / Math.PI;
     const targetLng = (targetLngRad * 180) / Math.PI;
 
-    return {
+    return new Coordinate({
       type: "Point",
       coordinates: [targetLng, targetLat],
       altitude: loc1.altitude, // Keep the same altitude
-    };
+    });
   }
   static getGroundCoordinate(loc: Coordinate, yaw: number, pitch: number) {
     if (pitch > 0) {
       return null;
     }
-    let clippedYaw = this.getClippedDegree(yaw);
+    let clippedYaw = Coordinate.getClippedDegree(yaw);
     let clippedPitch: number;
 
     const pitchDiff = Math.abs(Math.abs(pitch) - 90);
     if (pitch < -90) {
       clippedPitch = -90 + pitchDiff;
-      clippedYaw = this.getClippedDegree(clippedYaw + 180);
+      clippedYaw = Coordinate.getClippedDegree(clippedYaw + 180);
     } else {
       clippedPitch = pitch;
     }
@@ -142,18 +142,18 @@ export class Coordinate extends via((field) => ({
     if (horizontalDistance > 5000) {
       return null;
     }
-    const targetCoordinate = this.getTargetCoordinate(loc, clippedYaw, horizontalDistance);
+    const targetCoordinate = Coordinate.getTargetCoordinate(loc, clippedYaw, horizontalDistance);
     return targetCoordinate;
   }
   static computeCenterAndZoomFromLocations(locations: Coordinate[]) {
     if (locations.length === 0) return null;
 
-    const { minLat, maxLat, minLng, maxLng } = this.getBounds(...locations);
-    const center: Coordinate = {
+    const { minLat, maxLat, minLng, maxLng } = Coordinate.getBounds(...locations);
+    const center = new Coordinate({
       type: "Point",
       coordinates: [(minLng + maxLng) / 2, (minLat + maxLat) / 2],
       altitude: 0,
-    };
+    });
 
     // 중심점에서의 위도를 사용하여 경도 보정
     const centerLat = center.coordinates[1];

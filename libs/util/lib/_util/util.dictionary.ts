@@ -1,4 +1,4 @@
-import { serviceDictionary } from "@akanjs/dictionary";
+import { serviceDictionary } from "akanjs/dictionary";
 
 export const dictionary = serviceDictionary(["en", "ko"]).translate({
   home: ["Home", "홈"],

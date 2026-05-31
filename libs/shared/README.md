@@ -4,7 +4,7 @@ An official akanjs library providing comprehensive shared utilities, components,
 
 ## ✨ Feature of library
 
-The `@akanjs/shared` library is a comprehensive collection of shared utilities divided into five main categories:
+The `akanjs/shared` library is a comprehensive collection of shared utilities divided into five main categories:
 
 ### 🏗️ **Base Types** (`/base`)
 
@@ -14,7 +14,7 @@ Core type definitions and foundational structures:
   - `SlateContent` - Type definitions for Slate.js rich text content
   - Core element types for structured document content
 
-### 🖥️ **Server-side Utilities** (`/nest`)
+### 🖥️ **Server-side Utilities** (`/server`)
 
 Backend integration utilities for NestJS applications:
 
@@ -24,7 +24,7 @@ Backend integration utilities for NestJS applications:
   - `isPasswordMatch()` - Password verification against hashes
   - `webFile` - Web standard File implementation
 
-### 🌐 **Client-side Utilities** (`/next`)
+### 🌐 **Client-side Utilities** (`/client`)
 
 Frontend utilities for Next.js and React applications:
 
@@ -127,15 +127,14 @@ Complete business modules and application logic:
 
 ### Prerequisites
 
-- Node.js 18+
-- NPM or Yarn package manager
+- Bun.js 1.3+
 
 ### Installation
 
 1. **Create your workspace**
 
 ```bash
-npm install -g @akanjs/cli --latest
+bun install -g akanjs --latest
 akan create-workspace
 ```
 
@@ -156,7 +155,7 @@ akan pull-library shared
 ### Authentication & Security
 
 ```typescript
-import { hashPassword, isPasswordMatch, decodeJwt } from "@shared/nest";
+import { hashPassword, isPasswordMatch, decodeJwt } from "@libs/shared/server";
 
 // Password hashing
 const hashedPassword = await hashPassword("userPassword123");
@@ -171,7 +170,7 @@ const decoded = decodeJwt("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...");
 ### File Operations
 
 ```typescript
-import { downloadFile, addFileUntilActive } from "@shared/next";
+import { downloadFile, addFileUntilActive } from "@libs/shared/client";
 
 // Download files
 await downloadFile("https://example.com/file.pdf", "document.pdf");
@@ -186,8 +185,8 @@ await addFileUntilActive(fileList, {
 ### Rich Text Processing
 
 ```typescript
-import { extractTextFromSlateJson } from "@shared/common";
-import { SlateContent } from "@shared/base";
+import { extractTextFromSlateJson } from "@libs/shared/common";
+import { SlateContent } from "@libs/shared/base";
 
 const slateContent: SlateContent = [{ type: "paragraph", children: [{ text: "Hello world!" }] }];
 
@@ -232,7 +231,7 @@ function UserEditForm() {
 ### Business Logic Integration
 
 ```typescript
-import { userService, fileService } from "@shared/lib";
+import { userService, fileService } from "@libs/shared/lib";
 
 // User operations
 const user = await userService.findById("user-id");
@@ -284,10 +283,8 @@ This project is part of the Akan.js ecosystem. See the main repository for licen
 
 ## 🔗 Related Libraries
 
-- [`@akanjs/base`](../../../pkgs/@akanjs/base) - Core foundation
-- [`@akanjs/util`](../util) - Utility functions
-- [`@akanjs/nest`](../../../pkgs/@akanjs/nest) - NestJS integrations
-- [`@akanjs/next`](../../../pkgs/@akanjs/next) - Next.js utilities
+- [`akanjs/base`](../../../pkgs/akanjs/base) - Core foundation
+- [`akanjs/util`](../util) - Utility functions
 
 ---
 

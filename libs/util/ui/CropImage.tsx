@@ -1,6 +1,6 @@
 "use client";
-import { dayjs } from "@akanjs/base";
-import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { dayjs } from "akanjs/base";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { Area, MediaSize, Point, Size } from "react-easy-crop";
 import Cropper from "react-easy-crop";
 
@@ -80,7 +80,7 @@ export const CropImage = forwardRef<CropRef, CropProps>(({ src, aspectRatio = [1
     if (!croppedAreaPixels) return;
     const image = await createImage(src);
     // if (!image) return null;
-    //! TODO:회전 처리인데 ㅈ같은 IOS에서 4096 넘어가는 것 때매 안됨
+    //! TODO:회전 처리인데 IOS에서 4096 넘어가는 것 때매 안됨
 
     // const canvas = document.createElement("canvas");
     // const ctx = canvas.getContext("2d");
@@ -126,7 +126,7 @@ export const CropImage = forwardRef<CropRef, CropProps>(({ src, aspectRatio = [1
       0,
       0,
       croppedAreaPixels.width,
-      croppedAreaPixels.height
+      croppedAreaPixels.height,
     );
 
     return await new Promise<string | null>((resolve, reject) => {

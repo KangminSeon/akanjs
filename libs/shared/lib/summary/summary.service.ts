@@ -1,35 +1,34 @@
-import { Float, Int, type NestedKeysWithAllowed } from "@akanjs/base";
-import { getFieldMetas } from "@akanjs/constant";
-import { documentInfo, getFilterMeta, getFilterQuery } from "@akanjs/document";
-import { serve } from "@akanjs/service";
-import { QueryMeta } from "@shared/common";
-
+import type { QueryMeta } from "@libs/shared/common";
+import { type Cls, FIELD_META, Float, Int, type NestedKeysWithAllowed } from "akanjs/base";
+import { DatabaseRegistry, getFilterInfoByKey } from "akanjs/document";
+import { serve } from "akanjs/service";
 import * as cnst from "../cnst";
 import * as db from "../db";
 
 export class SummaryService extends serve(db.summary, () => ({})) {
-  summary: db.Summary;
+  summary!: db.Summary;
 
   async makeSummary(archiveType: "periodic" | "non-periodic" = "non-periodic"): Promise<db.Summary> {
     const data = await this.summarize();
     return await this.summaryModel.archive(archiveType, data);
   }
   async summarize() {
-    const fieldMetas = getFieldMetas(cnst.Summary);
-    const queryFieldMetas = fieldMetas
-      .filter((fieldMeta) => !!fieldMeta.meta.filterRef)
-      .filter((fieldMeta) => fieldMeta.modelRef === Int || fieldMeta.modelRef === Float);
+    const queryFieldMetas = Object.entries(cnst.Summary[FIELD_META])
+      .filter(([_, field]) => !!field.meta.queryKey)
+      .filter(([_, field]) => (field.modelRef as Cls) === Int || (field.modelRef as Cls) === Float);
     const keyValues = await Promise.all(
-      queryFieldMetas.map(async (fieldMeta) => {
-        const queryMeta = fieldMeta.meta as QueryMeta;
-        const key = queryMeta.queryKey;
+      queryFieldMetas.map(async ([key, field]) => {
+        const queryMeta = field.meta as QueryMeta;
+        const queryKey = queryMeta.queryKey;
         const args = queryMeta.queryArgs;
-        const filterRef = documentInfo.getDatabase(queryMeta.refName).filter;
-        const query = getFilterQuery(filterRef, key)(...((typeof args === "function" ? args() : args) as object[]));
-        const modelName = getFilterMeta(filterRef).refName.slice(0, -6); // remove "Filter"
-        const value = await this.summaryModel.countWithQuery(modelName, query);
-        return [fieldMeta.key, value] as [string, number];
-      })
+        if (!queryKey) throw new Error(`queryKey is not defined for key: ${key}`);
+        const filterRef = DatabaseRegistry.getDatabase(queryMeta.refName).filter;
+        const query = (getFilterInfoByKey(filterRef, queryKey).queryFn as any)(
+          ...((typeof args === "function" ? args() : args) as object[]),
+        );
+        const value = await this.summaryModel.countWithQuery(queryMeta.refName, query);
+        return [key, value] as [string, number];
+      }),
     );
     return Object.fromEntries(keyValues);
   }
@@ -37,7 +36,7 @@ export class SummaryService extends serve(db.summary, () => ({})) {
   async moveValue(
     decField: NestedKeysWithAllowed<cnst.Summary, number>,
     incField: NestedKeysWithAllowed<cnst.Summary, number>,
-    value = 1
+    value = 1,
   ) {
     return await this.summaryModel.moveValue(decField, incField, value);
   }

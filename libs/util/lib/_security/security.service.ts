@@ -1,35 +1,83 @@
-import { baseEnv } from "@akanjs/base";
-import { resolveJwt } from "@akanjs/nest";
-import { serve } from "@akanjs/service";
-import { aesDecrypt, aesEncrypt, jwtSign, jwtVerify } from "@util/nest";
+import {
+  aesDecrypt,
+  aesEncrypt,
+  createOpaqueToken,
+  hashToken,
+  jwtSign,
+  jwtVerify,
+  resolveJwt,
+} from "@libs/util/srvkit";
+import { type Dayjs, dayjs, getEnv } from "akanjs/base";
+import { serve } from "akanjs/service";
+
+export interface AuthTokenPair {
+  jwt: string;
+  refreshToken: string;
+  expiresAt: Dayjs;
+}
 
 export class SecurityService extends serve("security" as const, ({ use }) => ({
   jwtSecret: use<string>(),
   aeskey: use<string>(),
 })) {
-  decrypt(hash: string) {
-    return aesDecrypt(hash, this.aeskey);
+  readonly accessTokenExpiresIn = "15m";
+  readonly refreshTokenDays = 30;
+
+  async decrypt(hash: string) {
+    return await aesDecrypt(hash, this.aeskey);
   }
-  encrypt(data: string) {
-    return aesEncrypt(data, this.aeskey);
+  async encrypt(data: string) {
+    return await aesEncrypt(data, this.aeskey);
   }
-  sign(message: string | Record<string, any>) {
-    return { jwt: jwtSign(message, this.jwtSecret) };
+  async sign(message: object) {
+    return { jwt: await jwtSign(message, this.jwtSecret) };
   }
-  verify(token: string) {
-    return jwtVerify(token, this.jwtSecret);
+  async signAccessToken(
+    data: Record<string, unknown>,
+    { sid, jti }: { sid: string; jti: string },
+  ): Promise<{
+    jwt: string;
+    expiresAt: Dayjs;
+  }> {
+    const expiresAt = dayjs().add(15, "minute");
+    const jwt = await jwtSign(
+      {
+        ...data,
+        appName: getEnv().appName,
+        environment: getEnv().environment,
+        tokenType: "access",
+        sid,
+      },
+      this.jwtSecret,
+      { expiresIn: this.accessTokenExpiresIn, issuedAt: true, jwtId: jti },
+    );
+    return { jwt, expiresAt };
   }
-  addJwt(data: { [key: string]: any }, existing: { [key: string]: any } = {}): { jwt: string } {
-    return this.sign({ ...existing, ...data, appName: baseEnv.appName, environment: baseEnv.environment });
-  }
-  subJwt(existing: { [key: string]: any }, keys: string | string[]) {
-    const removeKeys = Array.isArray(keys) ? keys : [keys];
-    const newJwt = Object.fromEntries(Object.entries(existing).filter(([key, value]) => !removeKeys.includes(key))) as {
-      [key: string]: any;
+  createRefreshToken() {
+    const refreshToken = createOpaqueToken();
+    return {
+      refreshToken,
+      refreshTokenHash: hashToken(refreshToken),
+      refreshTokenExpiresAt: dayjs().add(this.refreshTokenDays, "day").toDate(),
     };
-    return this.sign({ ...newJwt, appName: baseEnv.appName, environment: baseEnv.environment });
   }
-  verifyToken(token?: string) {
-    return resolveJwt(this.jwtSecret, token, { appName: baseEnv.appName, environment: baseEnv.environment });
+  hashRefreshToken(refreshToken: string) {
+    return hashToken(refreshToken);
+  }
+  async verify<T extends object = Record<string, unknown>>(token: string): Promise<T> {
+    return (await jwtVerify(token, this.jwtSecret)) as T;
+  }
+  async addJwt(data: Record<string, unknown>, existing: Record<string, unknown> = {}): Promise<{ jwt: string }> {
+    return await this.sign({ ...existing, ...data, appName: getEnv().appName, environment: getEnv().environment });
+  }
+  async subJwt(existing: Record<string, unknown>, keys: string | string[]): Promise<{ jwt: string }> {
+    const removeKeys = Array.isArray(keys) ? keys : [keys];
+    const newJwt = Object.fromEntries(Object.entries(existing).filter(([key]) => !removeKeys.includes(key))) as {
+      [key: string]: unknown;
+    };
+    return await this.sign({ ...newJwt, appName: getEnv().appName, environment: getEnv().environment });
+  }
+  async verifyToken(token?: string) {
+    return await resolveJwt(this.jwtSecret, token, { appName: getEnv().appName, environment: getEnv().environment });
   }
 }

@@ -1,5 +1,5 @@
 import { Area } from "./Area";
-import { Provider, ProviderProps } from "./Provider";
+import { Provider, type ProviderProps } from "./Provider";
 import { Trigger } from "./Trigger";
 
 export const Print = (props: ProviderProps) => {

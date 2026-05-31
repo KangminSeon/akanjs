@@ -1,16 +1,16 @@
-import { baseClientEnv, Dayjs, dayjs } from "@akanjs/base";
-import { getCookie, router, setAuth, setCookie } from "@akanjs/client";
-import { store } from "@akanjs/store";
-import { msg } from "@shared/client";
-import { isPhoneNumber } from "@util/common";
+import { msg } from "@libs/shared/client";
+import { type Dayjs, dayjs, getEnv } from "akanjs/base";
+import { getCookie, router, setAuth, setCookie } from "akanjs/client";
+import { isPhoneNumber } from "akanjs/common";
+import { store } from "akanjs/store";
 
 import * as cnst from "../cnst";
 import type { RootStore } from "../st";
 import { fetch, sig } from "../useClient";
 
-export class UserStore extends store(sig.user, {
-  self: cnst.user.getDefault() as cnst.User,
-  // prepareUser: cnst.user.getDefault() as cnst.User,
+export class UserStore extends store(sig.user, () => ({
+  self: new cnst.User(),
+  // prepareUser: new cnst.User(),
   // signupUser: null as cnst.User | null, // 회원가입용 user
   // verifyingUserId: null as string | null, // 인증 전 userId
   accountId: "",
@@ -25,11 +25,11 @@ export class UserStore extends store(sig.user, {
   sameAccountIdExists: "unknown" as "unknown" | boolean,
   sameNicknameExists: "unknown" as "unknown" | boolean,
   signToken: null as string | null,
-  leaveInfo: cnst.leaveInfo.getDefault(),
+  leaveInfo: new cnst.LeaveInfo(),
   agreePolicies: [] as string[],
-}) {
+})) {
   async getSelf({ jwt }: { jwt?: string } = {}) {
-    this.set({ self: await fetch.getSelf({ token: jwt }) });
+    this.set({ self: (await fetch.getSelf({ token: jwt })) ?? new cnst.User() });
   }
 
   async addBadgeCount() {
@@ -68,7 +68,7 @@ export class UserStore extends store(sig.user, {
       voc: leaveInfo.voc,
       at: leaveInfo.at,
     });
-    this.set({ leaveInfo: cnst.leaveInfo.getDefault() });
+    this.set({ leaveInfo: new cnst.LeaveInfo() });
   }
   async removeSelf({ redirect }: { redirect?: string }) {
     const { self } = this.get();
@@ -129,7 +129,7 @@ export class UserStore extends store(sig.user, {
     if (!userForm.appliedImages.length) return;
     await fetch.setAppliedImagesOfPrepareUser(
       userId,
-      userForm.appliedImages.map((file) => file.id)
+      userForm.appliedImages.map((file) => file.id),
     );
     if (redirect) router.push(`${redirect}?userId=${userId}`);
   }
@@ -250,7 +250,7 @@ export class UserStore extends store(sig.user, {
   async setPhoneInPrepareUser(
     userId: string,
     phone: string,
-    { hash = "dummy", redirect }: { hash?: string; redirect?: string } = {}
+    { hash = "dummy", redirect }: { hash?: string; redirect?: string } = {},
   ) {
     const { phoneCodeAt } = this.get();
     if (phoneCodeAt && dayjs().subtract(5, "seconds").isBefore(phoneCodeAt)) return;
@@ -299,7 +299,7 @@ export class UserStore extends store(sig.user, {
   //*================================================================*//
 
   async refreshJwt() {
-    const accessToken = await fetch.refreshJwt();
+    const accessToken = await fetch.refreshJwt(null);
     setAuth(accessToken);
   }
 
@@ -312,15 +312,15 @@ export class UserStore extends store(sig.user, {
       signupRedirect,
       errorRedirect,
       replace,
-    }: { signinRedirect: string; signupRedirect: string; errorRedirect: string; replace?: boolean }
+    }: { signinRedirect: string; signupRedirect: string; errorRedirect: string; replace?: boolean },
   ) {
     setCookie("ssoFor", "user");
     setCookie("signinRedirect", `${location.origin}${router.getPrefixedPath(signinRedirect)}`);
     setCookie("signupRedirect", `${location.origin}${router.getPrefixedPath(signupRedirect)}`);
     setCookie("errorRedirect", `${location.origin}${router.getPrefixedPath(errorRedirect)}`);
-    const url = `${baseClientEnv.serverHttpUri}/user/${ssoType}`;
-    if (replace) router.replace(url);
-    else router.push(url);
+    const url = `${getEnv().serverHttpUri}/user/${ssoType}`;
+    if (replace) location.replace(url);
+    else location.assign(url);
   }
   //*====================== SSO Area ======================*//
   //*======================================================*//

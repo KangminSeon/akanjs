@@ -1,5 +1,5 @@
 "use client";
-import { clsx } from "@akanjs/client";
+import { clsx } from "akanjs/client";
 import { type RefObject, useState } from "react";
 
 import { GridContext } from "./context";

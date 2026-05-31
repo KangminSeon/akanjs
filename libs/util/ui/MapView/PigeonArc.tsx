@@ -1,6 +1,6 @@
 "use client";
-import type { cnst } from "@util/client";
-import { GeoJson, PigeonProps } from "pigeon-maps";
+import type { cnst } from "@libs/util/client";
+import { GeoJson, type PigeonProps } from "pigeon-maps";
 import { type CSSProperties, useContext } from "react";
 
 import { PigeonMapPropsContext } from "./context";
@@ -24,7 +24,7 @@ function createArcGeometry(
   minRadius: number,
   maxRadius: number,
   direction: number,
-  angle: number
+  angle: number,
 ): number[][][] {
   const centerLat = center.coordinates[1];
   const centerLon = center.coordinates[0];

@@ -1,7 +1,7 @@
 "use client";
-import { Layout } from "@akanjs/ui";
-import { cnst, st, usePage } from "@shared/client";
-import { Field } from "@shared/ui";
+import { cnst, fetch, st, usePage } from "@libs/shared/client";
+import { Field } from "@libs/shared/ui";
+import { Layout } from "akanjs/ui";
 
 interface BannerEditProps {
   className?: string;
@@ -33,7 +33,7 @@ export const General = ({ className }: BannerEditProps) => {
       <Field.Img
         label={l("banner.image")}
         desc={l("banner.image.desc")}
-        sliceName="banner"
+        slice={fetch.slice.banner}
         value={bannerForm.image}
         onChange={st.do.setImageOnBanner}
       />

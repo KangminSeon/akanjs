@@ -1,6 +1,6 @@
 "use client";
-import { Copy } from "@akanjs/ui";
-import { usePage } from "@util/client";
+import { usePage } from "@libs/util/client";
+import { Copy } from "akanjs/ui";
 
 interface ShareProps {
   title: string;

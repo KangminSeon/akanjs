@@ -1,5 +1,5 @@
 "use client";
-import { createContext, RefObject } from "react";
+import { createContext, type RefObject } from "react";
 
 interface PrintContextType {
   ref: RefObject<HTMLDivElement | null>;

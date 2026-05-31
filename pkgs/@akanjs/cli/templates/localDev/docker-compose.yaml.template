@@ -1,0 +1,37 @@
+version: "3.8"
+networks:
+  <%= repoName %>-network:
+    driver: bridge
+services:
+  redis:
+    container_name: <%= repoName %>-redis
+    image: redis
+    restart: unless-stopped
+    ports:
+      - 6379:6379
+    networks:
+      - <%= repoName %>-network
+  libsql:
+    container_name: <%= repoName %>-libsql
+    image: ghcr.io/tursodatabase/libsql-server:latest
+    restart: unless-stopped
+    ports:
+      - 8080:8080
+    volumes:
+      - ./libsql:/var/lib/sqld
+    networks:
+      - <%= repoName %>-network
+  postgres:
+    container_name: <%= repoName %>-postgres
+    image: postgres:17
+    restart: unless-stopped
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_DB=akan
+      - POSTGRES_USER=akan
+      - POSTGRES_PASSWORD=akan
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+    networks:
+      - <%= repoName %>-network

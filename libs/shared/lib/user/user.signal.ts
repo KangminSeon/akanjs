@@ -1,19 +1,87 @@
-import { ID, JSON } from "@akanjs/base";
-import { Public, Req, Res } from "@akanjs/nest";
-import { Account as SerAccount, endpoint, internal, slice } from "@akanjs/signal";
 import {
+  Account,
+  Admin,
+  Every,
+  extractFacebookProfile,
+  extractGithubProfile,
+  extractGoogleProfile,
+  extractKakaoProfile,
+  extractNaverProfile,
   type FacebookResponse,
   type GithubResponse,
   type GoogleResponse,
+  getOAuthRedirectUrl,
   type KakaoResponse,
   Me,
   type NaverResponse,
+  Self,
+  type SerAccount,
+  SSO,
   type SsoCookie,
-} from "@shared/nest";
-import { Account, Admin, Every, Self, SSO, User } from "@shared/nest";
+  User,
+} from "@libs/shared/srvkit";
+import { Any, ID } from "akanjs/base";
+import { endpoint, internal, Public, Req, slice } from "akanjs/signal";
 
 import * as cnst from "../cnst";
 import * as srv from "../srv";
+
+const makeSsoRedirectResponse = (redirect: string, cookie?: Record<string, string>) => {
+  const headers = new Headers({
+    Location: redirect,
+    "X-Redirect-Method": "replace",
+  });
+
+  if (cookie) {
+    for (const [key, value] of Object.entries(cookie)) {
+      const httpOnly = key === "userRefreshToken" || key === "adminRefreshToken" ? "; HttpOnly" : "";
+      headers.append("Set-Cookie", `${key}=${encodeURIComponent(value)}; Path=/; SameSite=Lax${httpOnly}`);
+    }
+  }
+
+  return new Response(null, { status: 302, headers });
+};
+
+interface AccessTokenResponse {
+  jwt: string;
+  refreshToken?: string;
+  expiresAt?: unknown;
+}
+
+const makeAccessTokenResponse = (accessToken: AccessTokenResponse) => {
+  return new Response(JSON.stringify(accessToken), {
+    headers: {
+      "Content-Type": "application/json",
+      ...(accessToken.refreshToken
+        ? {
+            "Set-Cookie": `userRefreshToken=${encodeURIComponent(accessToken.refreshToken)}; Path=/; SameSite=Lax; HttpOnly`,
+          }
+        : {}),
+    },
+  });
+};
+
+const makeSignoutResponse = (accessToken: AccessTokenResponse) => {
+  return new Response(JSON.stringify(accessToken), {
+    headers: {
+      "Content-Type": "application/json",
+      "Set-Cookie": "userRefreshToken=; Path=/; SameSite=Lax; HttpOnly; Max-Age=0",
+    },
+  });
+};
+
+type OAuthType = "github" | "google" | "facebook" | "kakao" | "naver";
+
+const getSsoCode = (request: Bun.BunRequest) => {
+  const code = new URL(request.url).searchParams.get("code");
+  if (!code) throw new Error("Invalid SSO callback: missing code");
+  return code;
+};
+
+const makeOAuthRedirectResponse = (type: OAuthType, request: Bun.BunRequest) => {
+  const state = new URL(request.url).searchParams.get("state") ?? undefined;
+  return Response.redirect(getOAuthRedirectUrl(type, state), 302);
+};
 
 export class UserInternal extends internal(srv.user, () => ({})) {}
 
@@ -35,27 +103,28 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
     .exec(async function (nickname) {
       return await this.userService.getUserIdHasNickname(nickname);
     }),
-  getSelf: query(cnst.User, { guards: [User] })
-    .with(Self)
+  getSelf: query(cnst.User, { nullable: true })
+    .with(Self, { nullable: true })
     .exec(async function (self) {
+      if (!self) return null;
       return await this.userService.getUser(self.id);
     }),
   signinWithSignToken: mutation(cnst.util.AccessToken)
     .param("userId", ID)
     .body("signToken", String)
     .exec(async function (userId, signToken) {
-      return await this.userService.signinWithSignToken(userId, signToken);
+      return makeAccessTokenResponse(await this.userService.signinWithSignToken(userId, signToken)) as never;
     }),
   signoutUser: mutation(cnst.util.AccessToken)
     .with(Account)
-    .exec(function (account) {
-      return this.securityService.subJwt(account, "self");
+    .exec(async function (account) {
+      return makeSignoutResponse(await this.userService.signoutUser(account)) as never;
     }),
   activateUser: mutation(cnst.util.AccessToken)
     .param("userId", ID)
     .with(Account)
     .exec(async function (userId, account) {
-      return await this.userService.activateUser(userId, account);
+      return makeAccessTokenResponse(await this.userService.activateUser(userId, account)) as never;
     }),
   removeUser: mutation(cnst.User)
     .param("userId", ID)
@@ -69,7 +138,7 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
     .body("userId", ID, { nullable: true })
     .body("token", String)
     .exec(async function (userId, token) {
-      //! 임시 비활
+      // TODO: 임시 비활
       // if (!(await this.cloudflareService.isVerified(token))) throw new Error("Invalid Turnstile Token");
       return await this.userService.generatePrepareUser(userId);
     }),
@@ -114,7 +183,7 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
     .body("userId", ID)
     .body("accountId", String)
     .exec(async function (userId, accountId) {
-      //! 임시 비활
+      // TODO: 임시 비활
       // if (!(await this.cloudflareService.isVerified(token))) throw new Error("Invalid Turnstile Token");
       await this.userService.setAccountIdInPrepareUser(userId, accountId);
       return true;
@@ -133,9 +202,9 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
     .body("token", String)
     .with(Account)
     .exec(async function (accountId, password, token, account) {
-      //! 임시 비활
+      // TODO: 임시 비활
       //if (!(await this.cloudflareService.isVerified(token))) throw new Error("Invalid Turnstile Token");
-      return await this.userService.signinWithPassword(accountId, password, account);
+      return makeAccessTokenResponse(await this.userService.signinWithPassword(accountId, password, account)) as never;
     }),
   changePassword: mutation(Boolean, { guards: [Every] })
     .body("password", String)
@@ -143,7 +212,7 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
     .body("token", String)
     .with(Self)
     .exec(async function (password, prevPassword, token, self) {
-      //! 임시 비활
+      // TODO: 임시 비활
       // if (!(await this.cloudflareService.isVerified(token))) throw new Error("Invalid Turnstile Token");
       await this.userService.changePassword(self.id, password, prevPassword);
       return true;
@@ -285,7 +354,7 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
   getAccessTokenByAdmin: query(cnst.util.AccessToken, { guards: [Admin] })
     .param("userId", ID)
     .exec(async function (userId) {
-      return await this.userService.getAccessTokenByAdmin(userId);
+      return makeAccessTokenResponse(await this.userService.getAccessTokenByAdmin(userId)) as never;
     }),
   getEncourageInfo: query(cnst.EncourageInfo, { guards: [Admin] })
     .param("userId", ID)
@@ -343,7 +412,7 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
     }),
   setDiscordOfPrepareUser: mutation(Boolean)
     .body("userId", ID)
-    .body<"discord", { nickname?: string; user?: { username: string } }>("discord", JSON)
+    .body<"discord", { nickname?: string; user?: { username: string } }>("discord", Any)
     .exec(async function (userId, discord) {
       await this.userService.setDiscordOfPrepareUser(userId, discord);
       return true;
@@ -374,103 +443,97 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
 
   //*======================================================*//
   //*====================== SSO Area ======================*//
-  github: query(String, { onlyFor: "restapi", guards: [SSO.Github] }).exec(function () {
-    return "unreachable";
-  }),
-  githubCallback: query(JSON, { onlyFor: "restapi", guards: [SSO.Github], path: "github/callback" })
+  github: query(Any, { guards: [SSO.Github] })
     .with(Req)
-    .with(Res)
-    .exec(async function (req, res) {
-      const { username: accountId } = req.user as GithubResponse;
+    .exec((request) => makeOAuthRedirectResponse("github", request as Bun.BunRequest)),
+  githubCallback: query(Any, { guards: [SSO.Github], path: "github/callback" })
+    .with(Req)
+    .exec(async function (request) {
+      const req = request as Bun.BunRequest & { user?: GithubResponse; account?: SerAccount };
+      const githubUser = req.user ?? (await extractGithubProfile(getSsoCode(req)));
+      const { username: accountId } = githubUser;
       const { cookie, redirect } = await this.userService.handleSsoCallback(
         accountId,
         "github",
-        req.cookies as SsoCookie,
-        req.account as SerAccount | undefined
+        req.cookies.toJSON() as unknown as SsoCookie,
+        req.account as SerAccount | undefined,
       );
-      if (cookie) Object.entries(cookie).forEach(([key, value]) => res.cookie(key, value));
-      res.header("X-Redirect-Method", "replace").redirect(redirect);
+      return makeSsoRedirectResponse(redirect, cookie);
     }),
-  google: query(String, { onlyFor: "restapi", guards: [SSO.Google] }).exec(function () {
-    return "unreachable";
-  }),
-  googleCallback: query(JSON, { onlyFor: "restapi", guards: [SSO.Google], path: "google/callback" })
+  google: query(Any, { guards: [SSO.Google] })
     .with(Req)
-    .with(Res)
-    .exec(async function (req, res) {
-      const googleUser = req.user as GoogleResponse;
+    .exec((request) => makeOAuthRedirectResponse("google", request as Bun.BunRequest)),
+  googleCallback: query(Any, { guards: [SSO.Google], path: "google/callback" })
+    .with(Req)
+    .exec(async function (request) {
+      const req = request as Bun.BunRequest & { user?: GoogleResponse; account?: SerAccount };
+
+      const googleUser = req.user ?? (await extractGoogleProfile(getSsoCode(req)));
       const accountId = googleUser.emails[0].value;
       const { cookie, redirect } = await this.userService.handleSsoCallback(
         accountId,
         "google",
-        req.cookies as SsoCookie,
-        req.account as SerAccount | undefined
+        req.cookies.toJSON() as unknown as SsoCookie,
+        req.account as SerAccount | undefined,
       );
-      if (cookie) Object.entries(cookie).forEach(([key, value]) => res.cookie(key, value));
-      res.header("X-Redirect-Method", "replace").redirect(redirect);
+      return makeSsoRedirectResponse(redirect, cookie);
     }),
-  facebook: query(String, { onlyFor: "restapi", guards: [SSO.Facebook] }).exec(function () {
-    return "unreachable";
-  }),
-  facebookCallback: query(JSON, { onlyFor: "restapi", guards: [SSO.Facebook], path: "facebook/callback" })
+  facebook: query(Any, { guards: [SSO.Facebook] })
     .with(Req)
-    .with(Res)
-    .exec(async function (req, res) {
-      const facebookUser = req.user as FacebookResponse;
+    .exec((request) => makeOAuthRedirectResponse("facebook", request as Bun.BunRequest)),
+  facebookCallback: query(Any, { guards: [SSO.Facebook], path: "facebook/callback" })
+    .with(Req)
+    .exec(async function (request) {
+      const req = request as Bun.BunRequest & { user?: FacebookResponse; account?: SerAccount };
+      const facebookUser = req.user ?? (await extractFacebookProfile(getSsoCode(req)));
       const accountId = facebookUser.emails[0].value;
       const { cookie, redirect } = await this.userService.handleSsoCallback(
         accountId,
         "facebook",
-        req.cookies as SsoCookie,
-        req.account as SerAccount | undefined
+        req.cookies.toJSON() as unknown as SsoCookie,
+        req.account as SerAccount | undefined,
       );
-      if (cookie) Object.entries(cookie).forEach(([key, value]) => res.cookie(key, value));
-      res.header("X-Redirect-Method", "replace").redirect(redirect);
+      return makeSsoRedirectResponse(redirect, cookie);
     }),
-  apple: query(String, { onlyFor: "restapi", guards: [SSO.Apple] }).exec(function () {
-    return "unreachable";
-  }),
-  appleCallback: query(JSON, { onlyFor: "restapi", guards: [SSO.Apple], path: "apple/callback" })
+  apple: query(String, { guards: [SSO.Apple] }).exec(() => "unreachable"),
+  appleCallback: query(Any, { guards: [SSO.Apple], path: "apple/callback" })
     .with(Req)
-    .with(Res)
-    .exec(async function (req, res) {
+    .exec(async () => {
       // const sso = this.securityOption.sso.apple as AppleCredential;
       // if (!payload.code || !sso) throw new Error("Invalid Apple SSO");
       // return verifyAppleUser(payload, this.options.origin, sso);
     }),
-  kakao: query(String, { onlyFor: "restapi", guards: [SSO.Kakao] }).exec(function () {
-    return "unreachable";
-  }),
-  kakaoCallback: query(JSON, { onlyFor: "restapi", guards: [SSO.Kakao], path: "kakao/callback" })
+  kakao: query(Any, { guards: [SSO.Kakao] })
     .with(Req)
-    .with(Res)
-    .exec(async function (req, res) {
-      const { email: accountId } = req.user as KakaoResponse;
+    .exec((request) => makeOAuthRedirectResponse("kakao", request as Bun.BunRequest)),
+  kakaoCallback: query(Any, { guards: [SSO.Kakao], path: "kakao/callback" })
+    .with(Req)
+    .exec(async function (request) {
+      const req = request as Bun.BunRequest & { user?: KakaoResponse; account?: SerAccount };
+      const { email: accountId } = req.user ?? (await extractKakaoProfile(getSsoCode(req)));
       const { cookie, redirect } = await this.userService.handleSsoCallback(
         accountId,
         "kakao",
-        req.cookies as SsoCookie,
-        req.account as SerAccount | undefined
+        req.cookies.toJSON() as unknown as SsoCookie,
+        req.account as SerAccount | undefined,
       );
-      if (cookie) Object.entries(cookie).forEach(([key, value]) => res.cookie(key, value));
-      res.header("X-Redirect-Method", "replace").redirect(redirect);
+      return makeSsoRedirectResponse(redirect, cookie);
     }),
-  naver: query(String, { onlyFor: "restapi", guards: [SSO.Naver] }).exec(function () {
-    return "unreachable";
-  }),
-  naverCallback: query(JSON, { onlyFor: "restapi", guards: [SSO.Naver], path: "naver/callback" })
+  naver: query(Any, { guards: [SSO.Naver] })
     .with(Req)
-    .with(Res)
-    .exec(async function (req, res) {
-      const { email: accountId } = req.user as NaverResponse;
+    .exec((request) => makeOAuthRedirectResponse("naver", request as Bun.BunRequest)),
+  naverCallback: query(Any, { guards: [SSO.Naver], path: "naver/callback" })
+    .with(Req)
+    .exec(async function (request) {
+      const req = request as Bun.BunRequest & { user?: NaverResponse; account?: SerAccount };
+      const { email: accountId } = req.user ?? (await extractNaverProfile(getSsoCode(req)));
       const { cookie, redirect } = await this.userService.handleSsoCallback(
         accountId,
         "naver",
-        req.cookies as SsoCookie,
-        req.account as SerAccount | undefined
+        req.cookies.toJSON() as unknown as SsoCookie,
+        req.account as SerAccount | undefined,
       );
-      if (cookie) Object.entries(cookie).forEach(([key, value]) => res.cookie(key, value));
-      res.header("X-Redirect-Method", "replace").redirect(redirect);
+      return makeSsoRedirectResponse(redirect, cookie);
     }),
   //*====================== SSO Area ======================*//
   //*======================================================*//
@@ -490,8 +553,18 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
     }),
 
   refreshJwt: mutation(cnst.util.AccessToken)
+    .body("refreshToken", String, { nullable: true })
     .with(Account)
-    .exec(function (account) {
-      return this.securityService.sign(account);
+    .with(Req)
+    .exec(async function (refreshToken, account, request) {
+      const token = refreshToken ?? (request as Bun.BunRequest).cookies.get("userRefreshToken");
+      if (!token) throw new Error("No refresh token");
+      const accessToken = await this.userService.refreshUserToken(token, account);
+      return new Response(JSON.stringify(accessToken), {
+        headers: {
+          "Content-Type": "application/json",
+          "Set-Cookie": `userRefreshToken=${encodeURIComponent(accessToken.refreshToken ?? "")}; Path=/; SameSite=Lax; HttpOnly`,
+        },
+      }) as never;
     }),
 })) {}

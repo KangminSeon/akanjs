@@ -1,7 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": ["jest", "node"]
+    "types": ["bun-types"]
   },
-  "include": ["jest.config.ts", "**/*.test.ts"]
+  "include": ["**/*.test.ts"]
 }

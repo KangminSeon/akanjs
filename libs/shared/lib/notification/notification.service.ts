@@ -1,5 +1,5 @@
-import { serve } from "@akanjs/service";
-import type { FirebaseApi as FirebaseApiType } from "@util/nest";
+import type { FirebaseApi as FirebaseApiType } from "@libs/util/srvkit";
+import { serve } from "akanjs/service";
 
 import * as db from "../db";
 import type * as srv from "../srv";

@@ -1,4 +1,4 @@
-import { modelDictionary } from "@akanjs/dictionary";
+import { modelDictionary } from "akanjs/dictionary";
 
 import type { Notification, NotificationInsight, NotificationType, NotiLevel } from "./notification.constant";
 import type { NotificationFilter } from "./notification.document";
@@ -9,7 +9,7 @@ export const dictionary = modelDictionary(["en", "ko"])
     t(["Notification", "알림"]).desc([
       "Notification is a group of informations that is sent or going to be sent to the user. It is used for the user to be notified of the event, and the events can be accumulated and summarized by groups.",
       "알림은 사용자에게 전송되거나 전송될 정보의 집합입니다. 사용자에게 이벤트를 알리는 데 사용되며, 이벤트는 그룹별로 축적되고 요약될 수 있습니다.",
-    ])
+    ]),
   )
   .model<Notification>((t) => ({
     token: t(["Token", "토큰"]).desc(["Token of the notification", "알림의 토큰"]),

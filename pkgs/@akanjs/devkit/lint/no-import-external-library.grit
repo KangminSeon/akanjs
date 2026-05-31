@@ -1,0 +1,22 @@
+engine biome(1.0)
+language js(typescript, jsx)
+
+JsModuleSource() as $source where {
+  $source <: within JsImport(),
+  not $source <: or {
+    r"\"\..*",
+    r"\"akanjs.*",
+    r"\"@akanjs.*",
+    r"\"@playwright.*",
+    r"\"@radix-ui.*",
+    r"\"@apps/.*",
+    r"\"@libs/.*",
+    r"\"@pkgs/.*",
+    r"\"bun:test\"",
+    r"\"react.*"
+  },
+  register_diagnostic(
+    span = $source,
+    message = "External libraries should not be imported. Only internal and allowed packages are permitted."
+  )
+}

@@ -1,7 +1,6 @@
-import { Dayjs } from "@akanjs/base";
-import type { TElement } from "@udecode/plate-common";
+import type { Dayjs } from "akanjs/base";
 
-export type SlateContent = TElement[];
+export type SlateContent = any[];
 
 export interface Self {
   id: string;

@@ -1,7 +1,7 @@
 "use client";
-import { ClientInit, ClientView } from "@akanjs/signal";
-import { Load } from "@akanjs/ui";
-import { cnst, File } from "@shared/client";
+import { type cnst, File } from "@libs/shared/client";
+import type { ClientInit, ClientView } from "akanjs/fetch";
+import { Load } from "akanjs/ui";
 
 interface CardProps {
   className?: string;
@@ -9,11 +9,7 @@ interface CardProps {
 }
 export const Card = ({ className, init }: CardProps) => {
   return (
-    <Load.Units
-      className={className}
-      init={init}
-      renderItem={(file: cnst.LightFile) => <File.Unit.Card key={file.id} file={file} />}
-    />
+    <Load.Units className={className} init={init} renderItem={(file) => <File.Unit.Card key={file.id} file={file} />} />
   );
 };
 

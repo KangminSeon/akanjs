@@ -1,5 +1,5 @@
-import { enumOf } from "@akanjs/base";
-import { via } from "@akanjs/constant";
+import { enumOf } from "akanjs/base";
+import { via } from "akanjs/constant";
 
 export class LinkType extends enumOf("linkType", [
   "website",

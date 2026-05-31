@@ -1,6 +1,7 @@
 "use client";
-import { clsx } from "@akanjs/client";
-import React, { forwardRef, memo, useCallback, useImperativeHandle, useLayoutEffect, useRef } from "react";
+import { clsx } from "akanjs/client";
+import type React from "react";
+import { forwardRef, memo, useCallback, useImperativeHandle, useLayoutEffect, useRef } from "react";
 
 type Direction = "left" | "right" | "up" | "down" | "none";
 type SwipeHandler = (direction: Direction) => void;
@@ -45,11 +46,11 @@ const getElementSize = (element: HTMLElement) => {
 };
 
 const pythagoras = (x: number, y: number) => {
-  return Math.sqrt(Math.pow(x, 2) + Math.pow(y, 2));
+  return Math.sqrt(x ** 2 + y ** 2);
 };
 
 const normalize = (vector: { x: number; y: number }, multiplier = 1) => {
-  const length = Math.sqrt(Math.pow(vector.x, 2) + Math.pow(vector.y, 2));
+  const length = Math.sqrt(vector.x ** 2 + vector.y ** 2);
   return { x: (vector.x * multiplier) / length, y: (vector.y * multiplier) / length };
 };
 
@@ -85,7 +86,7 @@ const animateBack = async (element: HTMLElement) => {
   const startingPoint = getTranslate(element);
   const translation = translationString(
     startingPoint.x * -settings.bouncePower,
-    startingPoint.y * -settings.bouncePower
+    startingPoint.y * -settings.bouncePower,
   );
   const rotation = rotationString(getRotation(element) * -settings.bouncePower);
   element.style.transform = translation + rotation;
@@ -110,7 +111,7 @@ const getSwipeDirection = (property: { x: number; y: number }) => {
 
 const calcSpeed = (
   oldLocation: { x: number; y: number; time: number },
-  newLocation: { x: number; y: number; time: number }
+  newLocation: { x: number; y: number; time: number },
 ) => {
   const dx = newLocation.x - oldLocation.x;
   const dy = oldLocation.y - newLocation.y;
@@ -146,7 +147,7 @@ const dragableTouchmove = (
   coordinates: { x: number; y: number },
   element: HTMLElement,
   offset: { x: number; y: number },
-  lastLocation: { x: number; y: number; time: number }
+  lastLocation: { x: number; y: number; time: number },
 ) => {
   const pos = { x: coordinates.x + offset.x, y: coordinates.y + offset.y };
   const newLocation = { x: pos.x, y: pos.y, time: new Date().getTime() };
@@ -181,7 +182,7 @@ export const SwipeCard = memo(
         onSwipeRequirementFulfilled,
         onSwipeRequirementUnfulfilled,
       },
-      ref
+      ref,
     ) => {
       settings.swipeThreshold = swipeThreshold;
       const swipeAlreadyReleased = useRef(false);
@@ -234,7 +235,7 @@ export const SwipeCard = memo(
           // Card was not flicked away, animate back to start
           void animateBack(element);
         },
-        [flickOnSwipe, onSwipe, onCardLeftScreen, preventSwipe, swipeRequirementType]
+        [flickOnSwipe, onSwipe, onCardLeftScreen, preventSwipe, swipeRequirementType],
       );
 
       const handleSwipeStart = useCallback(() => {
@@ -254,7 +255,7 @@ export const SwipeCard = memo(
           // Check fulfillment
           if (onSwipeRequirementFulfilled ?? onSwipeRequirementUnfulfilled) {
             const dir = getSwipeDirection(
-              swipeRequirementType === "velocity" ? speed : getTranslate(element.current)
+              swipeRequirementType === "velocity" ? speed : getTranslate(element.current),
             ) as Direction;
             if (dir !== "none") {
               if (onSwipeRequirementFulfilled) onSwipeRequirementFulfilled(dir);
@@ -340,6 +341,6 @@ export const SwipeCard = memo(
           {children}
         </div>
       );
-    }
-  )
+    },
+  ),
 );

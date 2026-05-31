@@ -1,8 +1,8 @@
 "use client";
 
-import { cnst } from "@util";
-import { st } from "@util/client";
-import { CSSProperties } from "react";
+import type { cnst } from "@libs/util";
+import { st } from "@libs/util/client";
+import type { CSSProperties } from "react";
 
 import Pigeon from "./Pigeon";
 
@@ -13,7 +13,7 @@ export interface PigeonMapProps {
   onClick?: (coordinate: cnst.Coordinate) => void;
   onRightClick?: (coordinate: cnst.Coordinate) => void;
   onMouseMove?: (coordinate: cnst.Coordinate) => void;
-  mapTiler?: (x: number, y: number, z: number, dpr: number) => string;
+  mapTiler?: (x: number, y: number, z: number, dpr?: number) => string;
   zoomControlStyle?: CSSProperties;
   children?: any;
   showZoomControl?: boolean;

@@ -1,21 +1,27 @@
-import { DocumentModel } from "@akanjs/constant";
-import { sample, sampleOf } from "@akanjs/test";
-import * as adminSpec from "@shared/lib/admin/admin.signal.spec";
+import { expect } from "bun:test";
+import type * as adminSpec from "@libs/shared/lib/admin/admin.signal.spec";
+import type { DocumentModel } from "akanjs/constant";
+import { getOrSetupSignalTestFetch, sample, sampleOf } from "akanjs/test";
 
 import * as cnst from "../cnst";
-import { fetch } from "../sig";
+import type { fetch as sharedFetch } from "../useServer";
 
-export interface UserAgent<Fetch = typeof fetch, User = cnst.User, UserInput = cnst.UserInput> {
+type SharedFetch = typeof sharedFetch;
+
+const getFetch = async () => await getOrSetupSignalTestFetch<SharedFetch>();
+
+export interface UserAgent<Fetch = SharedFetch, User = cnst.User, UserInput = cnst.UserInput> {
   user: User;
   fetch: Fetch;
   accessToken: cnst.util.AccessToken;
   userInput: DocumentModel<UserInput>;
 }
-export type AdminAgent<Fetch = typeof fetch> = adminSpec.AdminAgent<Fetch>;
+export type AdminAgent<Fetch = SharedFetch> = adminSpec.AdminAgent<Fetch>;
 
-export const getUserAgentWithPhone = async <Fetch = typeof fetch, User = cnst.User, UserInput = cnst.UserInput>(
-  phoneIdx = 0
+export const getUserAgentWithPhone = async <Fetch = SharedFetch, User = cnst.User, UserInput = cnst.UserInput>(
+  phoneIdx = 0,
 ): Promise<UserAgent<Fetch, User, UserInput>> => {
+  const fetch = await getFetch();
   const phone = cnst.MASTER_PHONES[phoneIdx];
   const phoneCode = cnst.MASTER_PHONECODE;
   const userInput = sampleOf(cnst.UserInput);
@@ -36,10 +42,10 @@ export const getUserAgentWithPhone = async <Fetch = typeof fetch, User = cnst.Us
 
   // 5. 유저 활성화
   const accessToken = await fetch.activateUser(prepareUser.id);
-  const userFetch = fetch.clone(accessToken);
+  const userFetch = fetch.clone({ jwt: accessToken.jwt }) as SharedFetch;
 
   // 6. 로그인
-  const user = await userFetch.getSelf();
+  const user = (await userFetch.getSelf()) as User & cnst.User;
   expect(user.status).toBe("active");
   expect(await fetch.getUserIdHasPhone(phone)).toBeTruthy();
 
@@ -59,10 +65,11 @@ export const getUserAgentWithPhone = async <Fetch = typeof fetch, User = cnst.Us
 };
 
 export const getUserAgentWithPassword = async <
-  Fetch = typeof fetch,
+  Fetch = SharedFetch,
   User = cnst.User,
   UserInput = cnst.UserInput,
 >(): Promise<UserAgent<Fetch, User, UserInput>> => {
+  const fetch = await getFetch();
   const accountId = sample.email();
   const password = sample.string({ length: 10 });
   const userInput = sampleOf(cnst.UserInput);
@@ -83,10 +90,10 @@ export const getUserAgentWithPassword = async <
 
   // 5. 유저 활성화
   const accessToken = await fetch.activateUser(prepareUser.id);
-  const userFetch = fetch.clone(accessToken);
+  const userFetch = fetch.clone({ jwt: accessToken.jwt }) as SharedFetch;
 
   // 6. 로그인
-  const user = await userFetch.getSelf();
+  const user = (await userFetch.getSelf()) as User & cnst.User;
   expect(user.status).toBe("active");
   expect(await fetch.userExistsHasAccountId(accountId)).toBeTruthy();
 

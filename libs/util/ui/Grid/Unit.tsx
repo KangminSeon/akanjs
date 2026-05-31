@@ -1,5 +1,5 @@
 "use client";
-import { clsx } from "@akanjs/client";
+import { clsx } from "akanjs/client";
 import { useContext, useRef } from "react";
 import { BiX } from "react-icons/bi";
 
@@ -27,7 +27,7 @@ export const Unit = ({ className, closeClassName, children }: UnitProps) => {
         <div
           className={clsx(
             "absolute top-2 right-2 z-10 hidden cursor-pointer group-data-[open=true]/gridunit:block",
-            closeClassName
+            closeClassName,
           )}
           onClick={(e) => {
             e.stopPropagation();

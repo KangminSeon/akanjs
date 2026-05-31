@@ -4,7 +4,7 @@ An official akanjs library providing comprehensive utility functions for web dev
 
 ## ✨ Feature of library
 
-The `@akanjs/util` library is a comprehensive collection of utilities divided into four main categories:
+The `akanjs/util` library is a comprehensive collection of utilities divided into four main categories:
 
 ### 📱 **Common Utilities** (`/common`)
 
@@ -36,7 +36,7 @@ Essential utility functions for data manipulation and validation:
   - `hashColor()` - Generate consistent colors from strings
   - `replaceStart()` - Replace text from the beginning of strings
 
-### 🖥️ **Server-side APIs** (`/nest`)
+### 🖥️ **Server-side APIs** (`/server`)
 
 Backend integration utilities for NestJS applications:
 
@@ -129,15 +129,14 @@ Essential library functions and constants:
 
 ### Prerequisites
 
-- Node.js 18+
-- NPM or Yarn package manager
+- bun 1.3+
 
 ### Installation
 
 1. **Create your workspace**
 
 ```bash
-npm install -g @akanjs/cli --latest
+byb install -g akanjs --latest
 akan create-workspace
 ```
 
@@ -158,7 +157,7 @@ akan pull-library util
 ### Common Utilities
 
 ```typescript
-import { formatNumber, validate, randomString } from "@util/common";
+import { formatNumber, validate, randomString } from "@libs/util/common";
 
 // Format numbers
 formatNumber("1234567.89"); // "1,234,567.89"
@@ -174,7 +173,7 @@ randomString(8); // "aB3xY9mK"
 ### Server-side APIs
 
 ```typescript
-import { EmailApi, FirebaseApi, aesEncrypt } from "@util/nest";
+import { EmailApi, FirebaseApi, aesEncrypt } from "@libs/util/server";
 
 // Email service
 const emailApi = new EmailApi({
@@ -196,8 +195,8 @@ const encrypted = aesEncrypt("sensitive data", "secret-key");
 ### UI Components
 
 ```typescript
-import { Button, Modal } from "@akanjs/ui";
-import { Avatar } from "@util/ui";
+import { Button, Modal } from "akanjs/ui";
+import { Avatar } from "@libs/util/ui";
 
 function MyComponent() {
   return (
@@ -243,10 +242,8 @@ This project is part of the Akan.js ecosystem. See the main repository for licen
 
 ## 🔗 Related Libraries
 
-- [`@akanjs/base`](../../../pkgs/@akanjs/base) - Core foundation
-- [`@akanjs/client`](../../../pkgs/@akanjs/client) - Client-side utilities
-- [`@akanjs/nest`](../../../pkgs/@akanjs/nest) - NestJS integrations
-- [`@akanjs/next`](../../../pkgs/@akanjs/next) - Next.js utilities
+- [`akanjs/base`](../../../pkgs/akanjs/base) - Core foundation
+- [`akanjs/client`](../../../pkgs/akanjs/client) - Client-side utilities
 
 ---
 

@@ -1,5 +1,5 @@
 "use client";
-import { lazy } from "@akanjs/next";
+import { lazy } from "akanjs/webkit";
 
 export const Google = lazy(() => import("./Google"), { ssr: false });
 export const Marker = lazy(() => import("./Marker"), { ssr: false });
@@ -13,3 +13,4 @@ export const PigeonPolyline = lazy(() => import("./PigeonPolyline"), { ssr: fals
 export const PigeonPolygon = lazy(() => import("./PigeonPolygon"), { ssr: false });
 export const PigeonCircle = lazy(() => import("./PigeonCircle"), { ssr: false });
 export const PigeonArc = lazy(() => import("./PigeonArc"), { ssr: false });
+export const PigeonOverlay = lazy(() => import("./PigeonOverlay"), { ssr: false });

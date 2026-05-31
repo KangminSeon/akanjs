@@ -1,7 +1,12 @@
-import { dayjs } from "@akanjs/base";
-import { beyond, by, from, into, type SchemaOf } from "@akanjs/document";
-import { hashPassword } from "@shared/nest";
-
+import {
+  createRefreshSession,
+  hashPassword,
+  revokeRefreshSessionBySid,
+  revokeRefreshSessions,
+  rotateRefreshSession,
+} from "@libs/shared/srvkit";
+import { dayjs } from "akanjs/base";
+import { by, documentQueryHelper, from, into, type SchemaOf } from "akanjs/document";
 import * as cnst from "../cnst";
 
 export class AdminFilter extends from(cnst.Admin, (filter) => ({
@@ -12,8 +17,9 @@ export class AdminFilter extends from(cnst.Admin, (filter) => ({
   },
   sort: {},
 })) {}
-
 export class Admin extends by(cnst.Admin) {
+  declare isModified: (field?: string) => boolean;
+
   addRole(role: cnst.AdminRole["value"]) {
     if (!this.roles.includes(role)) this.roles = [...this.roles, role];
     return this;
@@ -31,30 +37,45 @@ export class Admin extends by(cnst.Admin) {
 export class AdminModel extends into(Admin, AdminFilter, cnst.admin, ({ byField }) => ({
   adminAccountIdLoader: byField("accountId"),
 })) {
-  async hasAnotherAdmin(accountId: string) {
-    const exists = await this.Admin.exists({ accountId: { $ne: accountId }, status: "active" });
-    return !!exists;
-  }
-  async getAdminSecret(accountId: string): Promise<{ id: string; roles: cnst.AdminRole["value"][]; password: string }> {
-    const adminSecret = await this.Admin.pickOne(
-      { accountId, removedAt: { $exists: false } },
-      { roles: true, password: true }
-    );
-    return adminSecret as { id: string; roles: cnst.AdminRole["value"][]; password: string };
-  }
-}
-
-export class AdminMiddleware extends beyond(AdminModel, Admin) {
-  onSchema(schema: SchemaOf<AdminModel, Admin>) {
+  static override _onSchema(schema: SchemaOf<AdminModel, Admin>) {
     schema.pre<Admin>("save", async function (next) {
       if (!this.isModified("password") || !this.password) {
-        next();
         return;
       }
       const encryptedPassword = await hashPassword(this.password);
       this.password = encryptedPassword;
-      next();
     });
     schema.index({ accountId: "text" });
+  }
+  async hasAnotherAdmin(accountId: string) {
+    const q = documentQueryHelper;
+    const exists = await this.Admin.exists(q.all({ accountId: q.ne(accountId) }, q.missing("removedAt")));
+    return !!exists;
+  }
+  async getAdminSecret(accountId: string): Promise<{ id: string; roles: cnst.AdminRole["value"][]; password: string }> {
+    const q = documentQueryHelper;
+    const adminSecret = await this.Admin.pickOne(q.all({ accountId }, q.missing("removedAt")), {
+      roles: true,
+      password: true,
+    });
+    return adminSecret as { id: string; roles: cnst.AdminRole["value"][]; password: string };
+  }
+  async createRefreshSession(adminId: string, refreshTokenHash: string, expiresAt: Date, userAgent?: string) {
+    return await createRefreshSession(this.adminCache, {
+      subject: "admin",
+      subjectId: adminId,
+      refreshTokenHash,
+      expiresAt,
+      userAgent,
+    });
+  }
+  async rotateRefreshSession(refreshTokenHash: string, nextRefreshTokenHash: string, nextExpiresAt: Date) {
+    return await rotateRefreshSession(this.adminCache, refreshTokenHash, nextRefreshTokenHash, nextExpiresAt);
+  }
+  async revokeRefreshSession(adminId: string, sessionId?: string) {
+    await revokeRefreshSessionBySid(this.adminCache, "admin", adminId, sessionId);
+  }
+  async revokeRefreshSessions(adminId: string) {
+    await revokeRefreshSessions(this.adminCache, "admin", adminId);
   }
 }

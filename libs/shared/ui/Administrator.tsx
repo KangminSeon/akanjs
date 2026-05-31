@@ -1,9 +1,9 @@
 "use client";
-import { DataMenuItem, router } from "@akanjs/client";
-import { useInterval } from "@akanjs/next";
-import { Menu } from "@akanjs/ui";
-import { Admin, cnst, st, usePage } from "@shared/client";
-import { ReactNode, useState } from "react";
+import { Admin, type cnst, st, usePage } from "@libs/shared/client";
+import { type DataMenuItem, router } from "akanjs/client";
+import { Menu } from "akanjs/ui";
+import { useInterval } from "akanjs/webkit";
+import { type ReactNode, useState } from "react";
 
 interface AdministratorProps {
   defaultMenu?: string;
@@ -23,10 +23,10 @@ export const Administrator = ({
   footer,
 }: AdministratorProps) => {
   const searchParams = st.use.searchParams();
-  const topMenu = searchParams.topMenu as string | undefined;
-  const subMenu = searchParams.subMenu as string | undefined;
+  const topMenu = Array.isArray(searchParams.topMenu) ? searchParams.topMenu[0] : searchParams.topMenu;
+  const subMenu = Array.isArray(searchParams.subMenu) ? searchParams.subMenu[0] : searchParams.subMenu;
   const [menuOpen, setMenuOpen] = useState(false);
-  const storeDo = st.do as unknown as { [key: string]: ((...args) => Promise<void>) | undefined };
+  const storeDo = st.do as unknown as { [key: string]: ((...args: any[]) => Promise<void>) | undefined };
   const { l } = usePage();
   const pageMenu = pageMenus.find((pageMenu) => pageMenu.key === topMenu) ?? pageMenus[0];
   const menuItems = pageMenu.menus;
@@ -44,7 +44,7 @@ export const Administrator = ({
     <div className="mx-auto mt-0 block min-h-screen overflow-hidden">
       <div className="fixed z-50 flex h-12 w-full items-center justify-between bg-black">
         <div className="mt-1 ml-5">
-          <div className="text-base-100 flex items-center gap-3 whitespace-nowrap">
+          <div className="flex items-center gap-3 whitespace-nowrap text-base-100">
             {logo} {l("admin.modelName")}
           </div>
         </div>

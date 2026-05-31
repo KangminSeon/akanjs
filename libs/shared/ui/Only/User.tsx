@@ -1,5 +1,5 @@
 "use client";
-import { cnst, st } from "@shared/client";
+import { type cnst, st } from "@libs/shared/client";
 
 interface UserProps {
   children?: React.ReactNode | React.ReactNode[];

@@ -1,6 +1,6 @@
 "use client";
-import { Layout } from "@akanjs/ui";
-import { st, usePage } from "@shared/client";
+import { st, usePage } from "@libs/shared/client";
+import { Layout } from "akanjs/ui";
 
 interface NotificationEditProps {
   className?: string;

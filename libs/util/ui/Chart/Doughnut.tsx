@@ -2,7 +2,7 @@
 import "chartjs-adapter-dayjs-4/dist/chartjs-adapter-dayjs-4.esm";
 
 import { ArcElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Title, Tooltip } from "chart.js";
-import { ChartProps, Doughnut as DoughnutChart } from "react-chartjs-2";
+import { type ChartProps, Doughnut as DoughnutChart } from "react-chartjs-2";
 
 ChartJS.register(CategoryScale, LinearScale, ArcElement, Title, Tooltip, Legend);
 

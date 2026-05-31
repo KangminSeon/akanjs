@@ -3,7 +3,7 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import clsx from "clsx";
-import { MouseEvent, ReactNode, useRef, useState } from "react";
+import { type MouseEvent, type ReactNode, useRef, useState } from "react";
 
 export interface DraggableUnitProps {
   id: string;
@@ -12,7 +12,7 @@ export interface DraggableUnitProps {
   onClick?: () => void | Promise<void>;
 }
 
-export const DraggableUnit = ({ id, onClick, children, className }: DraggableUnitProps) => {
+export default function DraggableUnit({ id, onClick, children, className }: DraggableUnitProps) {
   const { attributes, listeners, setNodeRef, transform, isOver, isDragging } = useSortable({
     id,
   });
@@ -29,9 +29,7 @@ export const DraggableUnit = ({ id, onClick, children, className }: DraggableUni
   // 마우스 업 이벤트 핸들러
   const handleMouseUp = (e: MouseEvent<HTMLDivElement, MouseEvent>) => {
     const dragTime = Date.now() - startTimeRef.current;
-    const dragDistance = Math.sqrt(
-      Math.pow(e.clientX - startPosRef.current.x, 2) + Math.pow(e.clientY - startPosRef.current.y, 2)
-    );
+    const dragDistance = Math.sqrt((e.clientX - startPosRef.current.x) ** 2 + (e.clientY - startPosRef.current.y) ** 2);
 
     // 짧은 시간 내에 적은 거리를 움직였다면 클릭으로 간주
     if (dragTime < 200 && dragDistance < 5 && !isDrag) {
@@ -42,9 +40,7 @@ export const DraggableUnit = ({ id, onClick, children, className }: DraggableUni
 
   // 마우스 이동 핸들러
   const handleMouseMove = (e: MouseEvent<HTMLDivElement, MouseEvent>) => {
-    const dragDistance = Math.sqrt(
-      Math.pow(e.clientX - startPosRef.current.x, 2) + Math.pow(e.clientY - startPosRef.current.y, 2)
-    );
+    const dragDistance = Math.sqrt((e.clientX - startPosRef.current.x) ** 2 + (e.clientY - startPosRef.current.y) ** 2);
 
     // 일정 거리 이상 움직였다면 드래깅으로 간주
     if (dragDistance > 5) {
@@ -77,4 +73,4 @@ export const DraggableUnit = ({ id, onClick, children, className }: DraggableUni
       {/* <TicketModal sliceName={sliceName} modalOpen={modalOpen} setModalOpen={setModalOpen} /> */}
     </>
   );
-};
+}

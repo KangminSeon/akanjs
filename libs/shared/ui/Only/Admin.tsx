@@ -1,6 +1,6 @@
 "use client";
-import { cnst, st } from "@shared/client";
-import { ReactNode } from "react";
+import { type cnst, st } from "@libs/shared/client";
+import type { ReactNode } from "react";
 
 interface AdminProps {
   children: ReactNode | ReactNode[];

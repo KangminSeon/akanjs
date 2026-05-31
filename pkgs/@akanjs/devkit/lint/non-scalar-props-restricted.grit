@@ -1,0 +1,13 @@
+`$name={$value}` where {
+  or {
+    $value <: `($$$_) => $_`,
+    $value <: `$_ => $_`,
+    $value <: `function($$$_) { $$$_ }`,
+    $value <: `function $fnName($$$_) { $$$_ }`
+  },
+  not $name <: or { `loader`, `render`, `of` },
+  register_diagnostic(
+    span = $name,
+    message = "Non-scalar props (function expressions) should not be used in server components. Allowed: loader, render, of."
+  )
+}

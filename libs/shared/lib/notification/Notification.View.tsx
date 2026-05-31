@@ -1,8 +1,8 @@
-import { clsx } from "@akanjs/client";
-import { RecentTime } from "@akanjs/ui";
-import { usePage } from "@shared/client";
+import { usePage } from "@libs/shared/client";
+import { clsx } from "akanjs/client";
+import { RecentTime } from "akanjs/ui";
 
-import * as cnst from "../cnst";
+import type * as cnst from "../cnst";
 
 interface NotificationViewProps {
   className?: string;
@@ -13,7 +13,7 @@ export const General = ({ className, notification }: NotificationViewProps) => {
   const { l } = usePage();
   return (
     <div className={clsx(className, ``)}>
-      <div className="mt-4 mb-0 flex justify-between border-b border-gray-200 p-2 text-2xl">
+      <div className="mt-4 mb-0 flex justify-between border-gray-200 border-b p-2 text-2xl">
         <h3>
           {l("notification.id")}-{notification.id}
         </h3>

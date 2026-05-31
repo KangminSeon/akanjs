@@ -1,6 +1,6 @@
-import { Admin, usePage } from "@shared/client";
+import { Admin, usePage } from "@libs/shared/client";
 
-import * as cnst from "../cnst";
+import type * as cnst from "../cnst";
 
 interface AdminViewProps {
   className?: string;

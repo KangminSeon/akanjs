@@ -1,7 +1,7 @@
 "use client";
-import { clsx } from "@akanjs/client";
+import { cnst } from "@libs/util";
 import { GoogleMap, type Libraries, useJsApiLoader } from "@react-google-maps/api";
-import { cnst } from "@util";
+import { clsx } from "akanjs/client";
 import { useEffect, useState } from "react";
 
 import { MapViewContext } from "./context";
@@ -29,7 +29,7 @@ export default function Google({
   mapKey,
   onClick,
   onRightClick,
-  center = { type: "Point", coordinates: [127.0016985, 37.5642135], altitude: 0 },
+  center = new cnst.Coordinate({ type: "Point", coordinates: [127.0016985, 37.5642135], altitude: 0 }),
   onChangeCenter,
   zoom,
   onChangeZoom,
@@ -89,21 +89,20 @@ export default function Google({
         onClick={(e) => {
           if (!e.latLng) return;
           return onClick?.(
-            cnst.coordinate.crystalize({
-              type: "Point",
+            new cnst.Coordinate().set({
               coordinates: [e.latLng.lng(), e.latLng.lat()],
               altitude: 0,
-            })
+            }),
           );
         }}
         onRightClick={(e) => {
           if (!e.latLng) return;
           return onRightClick?.(
-            cnst.coordinate.crystalize({
+            new cnst.Coordinate().set({
               type: "Point",
               coordinates: [e.latLng.lng(), e.latLng.lat()],
               altitude: 0,
-            })
+            }),
           );
         }}
         onCenterChanged={() => {
@@ -111,10 +110,7 @@ export default function Google({
           if (!currentCenter) return;
           const [lng, lat] = [currentCenter.lng(), currentCenter.lat()];
           if (center.coordinates[0] === lng && center.coordinates[1] === lat) return;
-          else
-            return onChangeCenter?.(
-              cnst.coordinate.crystalize({ type: "Point", coordinates: [lng, lat], altitude: 0 })
-            );
+          else return onChangeCenter?.(new cnst.Coordinate().set({ coordinates: [lng, lat], altitude: 0 }));
         }}
         onZoomChanged={() => {
           const currentZoom = map?.getZoom();
@@ -125,11 +121,7 @@ export default function Google({
         onMouseMove={(e) => {
           if (!e.latLng) return;
           const [lng, lat] = [e.latLng.lng(), e.latLng.lat()];
-          const coordinate = cnst.coordinate.crystalize({
-            type: "Point",
-            coordinates: [lng, lat],
-            altitude: 0,
-          });
+          const coordinate = new cnst.Coordinate().set({ coordinates: [lng, lat], altitude: 0 });
           onMouseMove?.(coordinate, e);
         }}
       >

@@ -1,0 +1,7 @@
+{
+  "name": "<%= repoName %>",
+  "description": "<%= repoName %> workspace",
+  "version": "0.0.1",
+  "dependencies": {},
+  "devDependencies": {}
+}

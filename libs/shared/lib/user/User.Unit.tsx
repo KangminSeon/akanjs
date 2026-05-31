@@ -1,7 +1,7 @@
-import { ModelProps } from "@akanjs/client";
-import { Avatar as AvatarUI } from "@util/ui";
+import { Avatar as AvatarUI } from "@libs/util/ui";
+import type { ModelProps } from "akanjs/client";
 
-import * as cnst from "../cnst";
+import type * as cnst from "../cnst";
 
 export const Card = ({ user }: ModelProps<"user", cnst.LightUser>) => {
   return <div>{user.id}</div>;

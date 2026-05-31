@@ -2,10 +2,5 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "jsx": "preserve"
-  },
-  "references": [
-    {
-      "path": "./tsconfig.spec.json"
-    }
-  ]
+  }
 }

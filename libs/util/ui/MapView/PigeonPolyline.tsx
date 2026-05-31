@@ -1,5 +1,5 @@
 "use client";
-import { cnst } from "@util/client";
+import { cnst } from "@libs/util/client";
 import { GeoJson } from "pigeon-maps";
 import { memo, useContext, useMemo } from "react";
 
@@ -50,7 +50,7 @@ export default memo(
         const [startX, startY] = contextProps.latLngToPixel?.(startAnchor) ?? [0, 0];
         const [endX, endY] = contextProps.latLngToPixel?.(endAnchor) ?? [0, 0];
 
-        const pixelDistance = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
+        const pixelDistance = Math.sqrt((endX - startX) ** 2 + (endY - startY) ** 2);
         arrowCount = Math.max(1, Math.floor(pixelDistance / arrowPixelDistance));
 
         // 화살표 위치 계산
@@ -81,11 +81,13 @@ export default memo(
         {arrows.map((arrow, index) => (
           <MapView.PigeonMarker
             key={index}
-            coordinate={{
-              coordinates: arrow.position,
-              type: "Point",
-              altitude: 0,
-            }}
+            coordinate={
+              new cnst.Coordinate({
+                coordinates: arrow.position,
+                type: "Point",
+                altitude: 0,
+              })
+            }
           >
             <div
               style={{
@@ -101,5 +103,5 @@ export default memo(
         ))}
       </>
     );
-  }
+  },
 );

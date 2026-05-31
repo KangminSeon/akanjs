@@ -1,10 +1,10 @@
-import { Dayjs, dayjs } from "@akanjs/base";
-import { store } from "@akanjs/store";
+import { type Dayjs, dayjs } from "akanjs/base";
+import { store } from "akanjs/store";
 
-import * as cnst from "../cnst";
+import type * as cnst from "../cnst";
 import { fetch, sig } from "../useClient";
 
-export class SummaryStore extends store(sig.summary, {
+export class SummaryStore extends store(sig.summary, () => ({
   // state
   summaryListInRange: [] as cnst.LightSummary[],
   summaryListInHourly: [] as cnst.LightSummary[],
@@ -21,7 +21,7 @@ export class SummaryStore extends store(sig.summary, {
   toByHourly: dayjs(),
   toByDaily: dayjs(),
   toByMonthly: dayjs(),
-}) {
+})) {
   async getActiveSummary() {
     this.set({ summary: await fetch.getActiveSummary(), summaryLoading: false });
   }
@@ -44,7 +44,7 @@ export class SummaryStore extends store(sig.summary, {
       ["hourly", "daily", "weekly", "monthly"],
       0,
       0,
-      "oldestAt"
+      "oldestAt",
     );
     this.set({ summaryListInHourly });
   }
@@ -55,7 +55,7 @@ export class SummaryStore extends store(sig.summary, {
       ["daily", "weekly", "monthly"],
       0,
       0,
-      "oldestAt"
+      "oldestAt",
     );
     this.set({ summaryListInDaily });
   }

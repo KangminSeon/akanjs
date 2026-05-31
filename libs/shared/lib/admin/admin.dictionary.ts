@@ -1,4 +1,4 @@
-import { modelDictionary } from "@akanjs/dictionary";
+import { modelDictionary } from "akanjs/dictionary";
 
 import type { Admin, AdminInsight, AdminRole } from "./admin.constant";
 import type { AdminFilter } from "./admin.document";
@@ -9,7 +9,7 @@ export const dictionary = modelDictionary(["en", "ko"])
     t(["Admin", "관리자"]).desc([
       "Admin is a person who manages the system, that has a data managent and system monitoring authority.",
       "관리자는 시스템을 관리하는 사람으로, 데이터 관리 및 시스템 모니터링 권한을 가지고 있습니다.",
-    ])
+    ]),
   )
   .model<Admin>((t) => ({
     accountId: t(["Account ID", "아이디"]).desc(["Account ID Description", "아이디 설명"]),

@@ -1,0 +1,9 @@
+{
+  "target": "raw-bun",
+  "scenario": "rest_minimal_ping",
+  "p99Ms": 3.5,
+  "rps": 95000,
+  "maxRssMb": 90,
+  "recordedAt": "2026-05-29T00:00:00.000Z",
+  "_comment": "Example/placeholder baseline. Replace with a real measurement on your hardware via `bun regression/check.ts --run <runId> --update`."
+}

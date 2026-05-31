@@ -1,8 +1,8 @@
 "use client";
-import { ClientInit, ClientView } from "@akanjs/signal";
-import { Image, Link, Load } from "@akanjs/ui";
-import { Banner, cnst } from "@shared/client";
-import { Swiper } from "@util/ui";
+import { Banner, type cnst } from "@libs/shared/client";
+import { Swiper } from "@libs/util/ui";
+import type { ClientInit, ClientView } from "akanjs/fetch";
+import { Image, Link, Load } from "akanjs/ui";
 
 interface CardProps {
   className?: string;
@@ -13,9 +13,7 @@ export const Card = ({ className, init }: CardProps) => {
     <Load.Units
       className={className}
       init={init}
-      renderItem={(banner: cnst.Banner) => (
-        <Banner.Unit.Card key={banner.id} href={`/banner/${banner.id}`} banner={banner} />
-      )}
+      renderItem={(banner) => <Banner.Unit.Card key={banner.id} href={`/banner/${banner.id}`} banner={banner} />}
     />
   );
 };

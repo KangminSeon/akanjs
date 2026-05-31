@@ -1,6 +1,6 @@
 "use client";
-import { Model } from "@akanjs/ui";
-import { usePage } from "@shared/client";
+import { fetch, usePage } from "@libs/shared/client";
+import { Model } from "akanjs/ui";
 import { BiTrash } from "react-icons/bi";
 
 interface RemoveProps {
@@ -9,7 +9,7 @@ interface RemoveProps {
 export const Remove = ({ bannerId }: RemoveProps) => {
   const { l } = usePage();
   return (
-    <Model.Remove modelId={bannerId} sliceName="banner">
+    <Model.Remove modelId={bannerId} slice={fetch.slice.banner}>
       <BiTrash /> {l("base.remove")}
     </Model.Remove>
   );

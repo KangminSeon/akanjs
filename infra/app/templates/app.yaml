@@ -1,0 +1,143 @@
+{{- $namespaceParts := split "-" .Release.Namespace }}
+{{- $branch := index $namespaceParts "_1" }}
+{{- $config := index .Values $branch }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-deployment
+  namespace: {{ .Values.appName }}-{{ $branch }}
+  labels:
+    app: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      labels:
+        app: app
+    spec:
+      containers:
+        - name: app
+          image: {{ .Values.image.registry }}/{{ .Values.repoName }}/{{ .Values.appName }}:{{ default (printf "%s-live" $branch) .Values.image.tag }}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8282
+          resources:
+            requests:
+              memory: {{ $config.app.resources.requests.memory }}
+              cpu: {{ $config.app.resources.requests.cpu }}
+            limits:
+              memory: {{ $config.app.resources.limits.memory }}
+              cpu: {{ $config.app.resources.limits.cpu }}
+          env:
+            - name: AKAN_PUBLIC_ENV
+              value: {{ $branch }}
+            - name: AKAN_REPLICA
+              value: {{ $config.app.replica }}
+          volumeMounts:
+            - name: sqlite-data
+              mountPath: /workspace/sqlite
+      imagePullSecrets:
+        - name: regcred
+      volumes:
+        - name: sqlite-data
+          persistentVolumeClaim:
+            claimName: sqlite-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sqlite-data
+  namespace: {{ .Values.appName }}-{{ $branch }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ $config.app.resources.storage }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-svc
+  namespace: {{ .Values.appName }}-{{ $branch }}
+spec:
+  selector:
+    app: app
+  ports:
+    - protocol: TCP
+      port: 8282
+      targetPort: 8282
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-ingress
+  namespace: {{ .Values.appName }}-{{ $branch }}
+  annotations:
+    ingress.kubernetes.io/ssl-redirect: "true"
+    kubernetes.io/tls-acme: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/session-cookie-name: "route"
+    nginx.ingress.kubernetes.io/session-cookie-expires: "172800"
+    nginx.ingress.kubernetes.io/session-cookie-max-age: "172800"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,apollo-require-preflight"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/allow-snippet-annotations: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2$3
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
+    nginx.ingress.kubernetes.io/proxy-busy-buffers-size: "24k"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - {{ .Values.appName }}-{{ $branch }}.{{ .Values.serveDomain }}
+{{- range $i, $subRoute := .Values.subRoutes }}
+        - {{ $subRoute }}-{{ $branch }}.{{ .Values.serveDomain }}
+{{ end}}
+{{- range $i, $domain := $config.domains }}
+        - {{ $domain }}
+{{ end}}
+      secretName: cert-{{ .Values.appName }}-{{ $branch }}
+  rules:
+    - host: {{ .Values.appName }}-{{ $branch }}.{{ .Values.serveDomain }}
+      http:
+        paths:
+          - path: /()(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: app-svc
+                port:
+                  number: 8282
+{{- range $i, $subRoute := .Values.subRoutes }}
+    - host: {{ $subRoute }}-{{ $branch }}.{{ .Values.serveDomain }}
+      http:
+        paths:
+          - path: /()(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: app-svc
+                port:
+                  number: 8282     
+{{ end }}
+{{- range $i, $domain := $config.domains }}
+    - host: {{ $domain }}
+      http:
+        paths:
+          - path: /()(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: app-svc
+                port:
+                  number: 8282    
+{{ end }}

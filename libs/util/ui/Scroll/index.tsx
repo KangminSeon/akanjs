@@ -1,5 +1,5 @@
 import { Navigator } from "./Navigator";
-import { Provider, ProviderProps } from "./Provider";
+import { Provider, type ProviderProps } from "./Provider";
 import { Render, RenderContext } from "./Render";
 import { Slide } from "./Slide";
 import { TitleNavigator } from "./TitleNavigator";

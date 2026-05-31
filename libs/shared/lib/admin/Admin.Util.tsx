@@ -1,24 +1,24 @@
 "use client";
-import { clsx } from "@akanjs/client";
-import { client } from "@akanjs/signal";
-import { Input, Link, Modal } from "@akanjs/ui";
-import { cnst, st, usePage } from "@shared/client";
-import { Icon } from "@util/ui";
-import { ReactNode, useEffect, useState } from "react";
+import { type cnst, st, usePage } from "@libs/shared/client";
+import { Icon } from "@libs/util/ui";
+import { clsx, fetch } from "akanjs/client";
+// import { client } from "akanjs/signal";
+import { Input, Link, Modal } from "akanjs/ui";
+import { type ReactNode, useEffect, useState } from "react";
 import { AiFillGithub, AiOutlineMenu, AiOutlinePoweroff } from "react-icons/ai";
 
 interface AuthProps {
   logo?: ReactNode;
   password?: boolean;
   ssoTypes?: cnst.SsoType["value"][];
+  redirect?: string;
 }
-export const Auth = ({ logo, password, ssoTypes = [] }: AuthProps) => {
+export const Auth = ({ logo, password, ssoTypes = [], redirect }: AuthProps) => {
   const adminForm = st.use.adminForm();
-  const uri = client.uri.replace("/graphql", "");
   const { l } = usePage();
   useEffect(() => {
     const handleEnter = (e: KeyboardEvent) => {
-      if (e.key === "Enter") void st.do.signinAdmin();
+      if (e.key === "Enter") void st.do.signinAdmin({ redirect });
     };
     window.addEventListener("keydown", handleEnter);
     return () => {
@@ -66,7 +66,7 @@ export const Auth = ({ logo, password, ssoTypes = [] }: AuthProps) => {
   const ssos = ssoTypes.filter((ssoType) => !!ssoButtons[ssoType]);
   return (
     <div className="flex h-screen w-full items-center justify-center">
-      <div className="bg-base-200 border-base-100/30 flex w-96 flex-col gap-4 rounded-2xl border p-8 shadow-sm">
+      <div className="flex w-96 flex-col gap-4 rounded-2xl border border-base-100/30 bg-base-200 p-8 shadow-sm">
         <div className="text-center">Admin System</div>
         {logo ? <div className="mb-4 text-center">{logo} </div> : null}
         {password && (
@@ -92,16 +92,16 @@ export const Auth = ({ logo, password, ssoTypes = [] }: AuthProps) => {
             <button
               className="btn btn-primary w-full"
               onKeyDown={(e) => {
-                if (e.key === "Enter") void st.do.signinAdmin();
+                if (e.key === "Enter") void st.do.signinAdmin({ redirect });
               }}
-              onClick={() => void st.do.signinAdmin()}
+              onClick={() => void st.do.signinAdmin({ redirect })}
             >
               {l("shared.signin")}
             </button>
           </>
         )}
         {ssos.map((sso) => (
-          <Link href={`${uri}/user/${sso}`} key={sso}>
+          <Link href={`${fetch.origin}/user/${sso}`} key={sso}>
             {ssoButtons[sso]}
           </Link>
         ))}
@@ -116,9 +116,9 @@ export const ToolMenu = () => {
       <label tabIndex={0} className="btn btn-ghost m-1">
         <AiOutlineMenu className="mt-0.5" />
       </label>
-      <ul tabIndex={0} className="dropdown-content menu bg-base-100 rounded-box z-[1] w-32 p-2 shadow-sm">
+      <ul tabIndex={0} className="dropdown-content menu z-[1] w-32 rounded-box bg-base-100 p-2 shadow-sm">
         <li onClick={() => void st.do.signoutAdmin()}>
-          <div className="text-base-content flex items-center gap-2">
+          <div className="flex items-center gap-2 text-base-content">
             <AiOutlinePoweroff className="mt-0.5" /> Logout
           </div>
         </li>
@@ -211,5 +211,18 @@ export const SetPassword = ({ className, id }: SetPasswordProps) => {
         />
       </Modal>
     </>
+  );
+};
+
+interface SignoutProps {
+  className?: string;
+  href?: string;
+  children: any;
+}
+export const Signout = ({ className, href, children }: SignoutProps) => {
+  return (
+    <Link className={className} href={href} onClick={() => void st.do.signoutAdmin()}>
+      {children}
+    </Link>
   );
 };

@@ -1,17 +1,17 @@
-import { sleep } from "@akanjs/common";
-import { FileStream, LocalFile } from "@akanjs/server";
-import { serve } from "@akanjs/service";
-import { Crawler, FileManager, getImageAbstract, getImageSize, type IpfsApi, type StorageApi } from "@util/nest";
+import { Crawler, FileManager, getImageAbstract, getImageSize, IpfsApi, type StorageApi } from "@libs/util/srvkit";
+import { sleep } from "akanjs/common";
+import type { LocalFile } from "akanjs/server";
+import { serve } from "akanjs/service";
 
 import * as db from "../db";
 
-export class FileService extends serve(db.file, ({ use }) => ({
+export class FileService extends serve(db.file, ({ use, plug }) => ({
   storageApi: use<StorageApi>(),
-  ipfsApi: use<IpfsApi>(),
+  ipfsApi: plug(IpfsApi),
 })) {
   localDir = `./data`;
 
-  async _postRemove(file: db.File) {
+  override async _postRemove(file: db.File) {
     await this.storageApi.deleteData(file.url);
     return file;
   }
@@ -26,22 +26,23 @@ export class FileService extends serve(db.file, ({ use }) => ({
           localPath: `./libs/shared/lib/file/sample.jpg`,
         },
         "generate",
-        "generate"
+        "generate",
       ))
     );
   }
 
   async addFiles(
-    fileStreams: FileStream[],
+    fileStreams: File[],
     fileMetas: db.FileMeta[],
     purpose: string,
-    group = "default"
+    group = "default",
   ): Promise<db.File[]> {
     if (fileStreams.length !== fileMetas.length) throw new Error("File Streams and File Metas are not matched");
     const files = await Promise.all(
       fileStreams.map(
-        async (fileStream, idx) => await this.#addFileFromStream(fileStream, fileMetas[idx], purpose, group)
-      )
+        async (fileStream, idx) =>
+          await this._addFileFromStream(fileStream, fileMetas[idx] as db.FileMeta, purpose, group),
+      ),
     );
     return files;
   }
@@ -49,7 +50,7 @@ export class FileService extends serve(db.file, ({ use }) => ({
     uri: string,
     purpose: string,
     group: string,
-    header: { [key: string]: string } = {}
+    header: { [key: string]: string } = {},
   ): Promise<db.File | null> {
     try {
       const file = await this.fileModel.findByOrigin(uri);
@@ -73,30 +74,29 @@ export class FileService extends serve(db.file, ({ use }) => ({
     }
   }
 
-  async #addFileFromStream(fileStream: FileStream, fileMeta: db.FileMeta, purpose: string, group: string | null) {
-    const resolvedFileStream = await (fileStream as unknown as Promise<FileStream>);
-    const { filename, mimetype, encoding } = resolvedFileStream;
+  async _addFileFromStream(fileStream: File, fileMeta: db.FileMeta, purpose: string, group: string | null) {
+    const resolvedFileStream = await (fileStream as unknown as Promise<File>);
     const file = await this.fileModel.generateFile({
       id: fileMeta.fileId,
       progress: 0,
       url: "",
       imageSize: [0, 0],
-      filename,
-      mimetype,
-      encoding,
+      filename: fileStream.name,
+      mimetype: fileStream.type,
+      encoding: "7bit",
       ...fileMeta,
     });
-    const rename = this.#convertFileName(file);
+    const rename = this._convertFileName(file);
     const path = `${purpose.length ? purpose : "default"}/${group?.length ? group : "default"}/${rename}`;
     this.storageApi.uploadDataFromStream({
       path: path,
-      body: resolvedFileStream.createReadStream(),
-      mimetype,
+      body: resolvedFileStream.stream(),
+      mimetype: fileStream.type,
       updateProgress: async (progress) => {
         await this.fileModel.progressUpload(file.id, progress.loaded, fileMeta.size);
       },
       uploadSuccess: async (url) => {
-        const abstract = mimetype.startsWith("image/") ? await getImageAbstract(url) : {};
+        const abstract = fileStream.type.startsWith("image/") ? await getImageAbstract(url) : {};
         void this.fileModel.finishUpload(file.id, url, abstract);
       },
     });
@@ -106,7 +106,7 @@ export class FileService extends serve(db.file, ({ use }) => ({
     localFile: LocalFile,
     purpose: string,
     group = "default",
-    { origin }: { origin?: string } = {}
+    { origin }: { origin?: string } = {},
   ): Promise<db.File> {
     const { size } = await FileManager.getFileStat(localFile);
     const file = await this.fileModel.createFile({
@@ -134,19 +134,19 @@ export class FileService extends serve(db.file, ({ use }) => ({
   }
   async saveImageFromUri(
     uri: string,
-    { cache, rename, header }: { cache?: boolean; rename?: string; header?: { [key: string]: string } } = {}
+    { cache, rename, header }: { cache?: boolean; rename?: string; header?: { [key: string]: string } } = {},
   ): Promise<LocalFile> {
     const dirname = `${this.localDir}/uriDownload`;
-    if (uri.startsWith("data:")) return FileManager.saveEncodedData(uri, dirname);
+    if (uri.startsWith("data:")) return await FileManager.saveEncodedData(uri, dirname);
     const readStream = uri.startsWith("ipfs://")
       ? await FileManager.readUrlAsStream(this.ipfsApi.getHttpsUri(uri))
       : await FileManager.readUrlAsStream(uri);
     const filename = uri.split("/").pop();
     const localPath = `${dirname}${filename ? `/${filename}` : ""}`;
-    const localFile = await FileManager.writeStreamToFile(readStream, localPath, { cache, rename, header });
+    const localFile = await FileManager.writeStreamToFile(readStream, localPath, { cache, rename });
     return localFile;
   }
-  #convertFileName(file: db.File) {
+  private _convertFileName(file: db.File) {
     const split = file.filename.split(".");
     const ext = split.length > 1 ? `.${split.at(-1)}` : "";
     return `${file.id}${ext}`;
@@ -157,6 +157,7 @@ export class FileService extends serve(db.file, ({ use }) => ({
     const localFile = await this.saveImageFromUri(file.url);
     await sleep(100);
     const cloudPath = file.url.split("/").slice(3).join("/").split("?")[0];
+    if (!cloudPath) throw new Error("Cloud path is not found");
     const path = root ? cloudPath.replace(`${root}/`, "") : cloudPath;
     const url = await this.storageApi.uploadDataFromLocal({
       path,

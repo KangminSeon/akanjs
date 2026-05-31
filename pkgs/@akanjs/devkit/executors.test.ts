@@ -1,0 +1,350 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { AkanAppConfig } from "./akanConfig";
+import { AppExecutor, CommandExecutionError, Executor, PkgExecutor, WorkspaceExecutor } from "./executors";
+import { AppInfo } from "./scanInfo";
+import type { PackageJson } from "./types";
+
+const originalEnv = { ...process.env };
+const tempRoots: string[] = [];
+
+const makeTempRoot = async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "akan-devkit-"));
+  tempRoots.push(root);
+  return root;
+};
+
+const writeJson = async (filePath: string, value: object) => {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
+};
+
+const rootPackageJson = (extra: Partial<PackageJson> = {}): PackageJson => ({
+  name: "fixture",
+  version: "1.0.0",
+  description: "fixture",
+  dependencies: {
+    react: "19.0.0",
+    "react-dom": "19.0.0",
+    "react-server-dom-webpack": "19.0.0",
+    sharp: "1.0.0",
+    lodash: "4.0.0",
+  },
+  devDependencies: {
+    typescript: "6.0.0",
+  },
+  ...extra,
+});
+
+beforeEach(() => {
+  process.env = { ...originalEnv };
+});
+
+afterEach(async () => {
+  process.env = { ...originalEnv };
+  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+describe("Executor filesystem helpers", () => {
+  test("reports command failures with command context and captured output", async () => {
+    const root = await makeTempRoot();
+    const exec = new Executor("fixture", root);
+
+    let error: unknown;
+    try {
+      await exec.spawn(process.execPath, ["--eval", "console.error('spawn failed'); process.exit(7)"]);
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(CommandExecutionError);
+    expect((error as CommandExecutionError).message).toContain(`Command failed: ${process.execPath}`);
+    expect((error as CommandExecutionError).message).toContain(`cwd: ${root}`);
+    expect((error as CommandExecutionError).message).toContain("exit code: 7");
+    expect((error as CommandExecutionError).message).toContain("spawn failed");
+  });
+
+  test("reports inherited stdio command failures with a fallback message", async () => {
+    const root = await makeTempRoot();
+    const exec = new Executor("fixture", root);
+
+    let error: unknown;
+    try {
+      await exec.spawn(process.execPath, ["--eval", "process.exit(3)"], { stdio: "inherit" });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(CommandExecutionError);
+    expect((error as CommandExecutionError).message).toContain(`Command failed: ${process.execPath}`);
+    expect((error as CommandExecutionError).message).toContain(`cwd: ${root}`);
+    expect((error as CommandExecutionError).message).toContain("exit code: 3");
+  });
+
+  test("resolves paths and reads/writes files relative to cwd", async () => {
+    const root = await makeTempRoot();
+    const exec = new Executor("fixture", root);
+
+    expect(exec.getPath("nested/file.txt")).toBe(path.join(root, "nested/file.txt"));
+    expect(exec.getPath("./relative.txt")).toBe(path.join(root, "relative.txt"));
+    expect(exec.getPath(root)).toBe(root);
+
+    await exec.mkdir("nested");
+    await exec.writeFile("nested/file.txt", "hello");
+    await exec.writeJson("nested/data.json", { ok: true });
+
+    expect(await exec.exists("nested/file.txt")).toBe(true);
+    expect(await exec.readFile("nested/file.txt")).toBe("hello");
+    expect(await exec.readJson("nested/data.json")).toEqual({ ok: true });
+    expect(await exec.readdir("nested")).toEqual(expect.arrayContaining(["file.txt", "data.json"]));
+
+    const entries = await exec.getFilesAndDirs(".");
+    expect(entries.dirs).toContain("nested");
+  });
+
+  test("applies CLI template files with dictionary replacement and overwrite control", async () => {
+    const root = await makeTempRoot();
+    const exec = new Executor("fixture", root);
+
+    const [created] = await exec.applyTemplate({
+      basePath: "local",
+      template: "localDev/docker-compose.yaml.template",
+      dict: { repoName: "sample" },
+    });
+    expect(created?.filePath).toBe(path.join(root, "local/docker-compose.yaml"));
+    expect(await readFile(path.join(root, "local/docker-compose.yaml"), "utf8")).toContain("sample-network");
+
+    await writeFile(path.join(root, "local/docker-compose.yaml"), "custom");
+    await exec.applyTemplate({
+      basePath: "local",
+      template: "localDev/docker-compose.yaml.template",
+      dict: { repoName: "changed" },
+      overwrite: false,
+    });
+    expect(await readFile(path.join(root, "local/docker-compose.yaml"), "utf8")).toBe("custom");
+  });
+
+  test("applies hidden files and directories from CLI templates", async () => {
+    const root = await makeTempRoot();
+    const exec = new Executor("fixture", root);
+
+    await exec.applyTemplate({
+      basePath: "workspace",
+      template: "workspaceRoot",
+      dict: { repoName: "sample", appName: "demo", serveDomain: "localhost" },
+    });
+
+    expect(await readFile(path.join(root, "workspace/.gitignore"), "utf8")).toContain("node_modules");
+    expect(await readFile(path.join(root, "workspace/.env"), "utf8")).toContain("AKAN_PUBLIC_REPO_NAME");
+    expect(await readFile(path.join(root, "workspace/.vscode/settings.json"), "utf8")).toContain("typescript.tsdk");
+    expect(await readFile(path.join(root, "workspace/biome.json"), "utf8")).toContain(
+      "./node_modules/@akanjs/devkit/lint/no-import-client-functions.grit",
+    );
+  });
+
+  test("copies static files from CLI templates", async () => {
+    const root = await makeTempRoot();
+    const exec = new Executor("fixture", root);
+
+    await exec.applyTemplate({
+      basePath: "app",
+      template: "app",
+      dict: { appName: "demo", companyName: "fixture", startDomain: "localhost" },
+      options: { libs: [] },
+    });
+
+    const templateRoot = path.resolve(import.meta.dir, "../cli/templates/app/public");
+    await expect(readFile(path.join(root, "app/public/logo.png"))).resolves.toEqual(
+      await readFile(path.join(templateRoot, "logo.png")),
+    );
+    await expect(readFile(path.join(root, "app/public/favicon.ico"))).resolves.toEqual(
+      await readFile(path.join(templateRoot, "favicon.ico")),
+    );
+  });
+});
+
+describe("Workspace and app executor environment contracts", () => {
+  test("reads base development environment and reports required missing values", () => {
+    process.env.AKAN_PUBLIC_REPO_NAME = "repo";
+    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
+    process.env.AKAN_PUBLIC_ENV = "local";
+    process.env.AKAN_PUBLIC_APP_NAME = "demo";
+    process.env.AKAN_WORKSPACE_ROOT = "/workspace";
+    process.env.PORT_OFFSET = "10";
+
+    expect(WorkspaceExecutor.getBaseDevEnv()).toEqual({
+      appName: "demo",
+      workspaceRoot: "/workspace",
+      repoName: "repo",
+      serveDomain: "example.com",
+      env: "local",
+      portOffset: 10,
+    });
+
+    delete process.env.AKAN_PUBLIC_REPO_NAME;
+    expect(() => WorkspaceExecutor.getBaseDevEnv()).toThrow("AKAN_PUBLIC_REPO_NAME is not set");
+  });
+
+  test("reads base development environment from an explicit env file", async () => {
+    const root = await makeTempRoot();
+    await writeFile(
+      path.join(root, ".env"),
+      [
+        "AKAN_PUBLIC_REPO_NAME=file-repo",
+        'AKAN_PUBLIC_SERVE_DOMAIN="file.example.com"',
+        "AKAN_PUBLIC_ENV=develop",
+        "AKAN_WORKSPACE_ROOT=/from-file",
+        "AKAN_PUBLIC_APP_NAME=file-app",
+        "PORT_OFFSET=7",
+        "",
+      ].join("\n"),
+    );
+    delete process.env.AKAN_PUBLIC_REPO_NAME;
+    delete process.env.AKAN_PUBLIC_SERVE_DOMAIN;
+
+    expect(WorkspaceExecutor.getBaseDevEnv(path.join(root, ".env"))).toEqual({
+      appName: "file-app",
+      workspaceRoot: "/from-file",
+      repoName: "file-repo",
+      serveDomain: "file.example.com",
+      env: "develop",
+      portOffset: 7,
+    });
+  });
+
+  test("builds app command environment and prepareCommand artifacts", async () => {
+    const root = await makeTempRoot();
+    process.env.AKAN_PUBLIC_REPO_NAME = "repo";
+    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
+    process.env.AKAN_PUBLIC_ENV = "local";
+    process.env.PORT_OFFSET = "3";
+
+    await writeJson(path.join(root, "package.json"), rootPackageJson());
+    await mkdir(path.join(root, "apps/demo/private"), { recursive: true });
+    await mkdir(path.join(root, "apps/demo/public"), { recursive: true });
+    await writeFile(
+      path.join(root, "apps/demo/akan.config.ts"),
+      [
+        "export default {",
+        '  routes: [{ basePath: "admin", domains: { debug: ["Admin.Debug.Example.com:8282"] } }],',
+        '  i18n: { locales: ["en", "ko"], defaultLocale: "ko" },',
+        "};",
+        "",
+      ].join("\n"),
+    );
+
+    const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
+    const app = AppExecutor.from(workspace, "demo");
+    const env = app.getCommandEnv({ EXTRA: "ok" });
+    expect(env.AKAN_PUBLIC_APP_NAME).toBe("demo");
+    expect(env.AKAN_WORKSPACE_ROOT).toBe(root);
+    expect(env.PORT).toBe("8285");
+    expect(env.AKAN_PUBLIC_CLIENT_PORT).toBe("8285");
+    expect(env.AKAN_PUBLIC_SERVER_PORT).toBe("8285");
+    expect(env.EXTRA).toBe("ok");
+
+    const prepared = await app.prepareCommand("build");
+    expect(prepared.env.AKAN_COMMAND_TYPE).toBe("build");
+    expect(prepared.env.AKAN_PUBLIC_BASE_PATHS).toBe("admin");
+    expect((await stat(path.join(root, "dist/apps/demo/private"))).isDirectory()).toBe(true);
+    expect((await stat(path.join(root, "dist/apps/demo/public"))).isDirectory()).toBe(true);
+  });
+});
+
+describe("PkgExecutor package generation", () => {
+  test("generates dist package metadata from root dependency versions", async () => {
+    const root = await makeTempRoot();
+    await writeJson(path.join(root, "package.json"), rootPackageJson());
+    await writeJson(path.join(root, "pkgs/@sample/tool/package.json"), {
+      name: "@sample/tool",
+      version: "0.1.0",
+      description: "tool",
+      exports: { "./extra": { import: "./extra.ts" } },
+      peerDependencies: { react: "19.0.0" },
+      peerDependenciesMeta: { react: { optional: true } },
+      optionalDependencies: { sharp: "1.0.0" },
+    });
+
+    const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
+    const pkg = PkgExecutor.from(workspace, "@sample/tool");
+    const distPackageJson = await pkg.generateDistPackageJson(["lodash"], ["typescript"]);
+
+    expect(distPackageJson).toMatchObject({
+      name: "@sample/tool",
+      type: "module",
+      engines: { bun: ">=1.3.13" },
+      dependencies: { lodash: "4.0.0" },
+      devDependencies: { typescript: "6.0.0" },
+      peerDependencies: { react: "19.0.0" },
+      peerDependenciesMeta: { react: { optional: true } },
+      optionalDependencies: { sharp: "1.0.0" },
+    });
+    expect(distPackageJson.exports?.["."]).toEqual({
+      import: "./index.ts",
+      types: "./index.ts",
+      default: "./index.ts",
+    });
+    expect(await Bun.file(path.join(root, "dist/pkgs/@sample/tool/package.json")).json()).toEqual(distPackageJson);
+    expect(await Bun.file(path.join(root, "pkgs/@sample/tool/package.json")).json()).toEqual(distPackageJson);
+  });
+});
+
+describe("scan info construction", () => {
+  test("indexes database, service, and scalar file conventions from prepared scan results", () => {
+    const root = "/workspace";
+    const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
+    const app = AppExecutor.from(workspace, "demo");
+    const config = new AkanAppConfig(
+      app,
+      [],
+      rootPackageJson(),
+      {},
+      {
+        repoName: "repo",
+        serveDomain: "example.com",
+        env: "debug",
+        portOffset: 0,
+        workspaceRoot: root,
+      },
+    );
+
+    const info = new AppInfo(
+      app,
+      {
+        name: "demo",
+        type: "app",
+        repoName: "repo",
+        serveDomain: "example.com",
+        akanConfig: config,
+        files: {
+          constant: { databases: ["post"], scalars: ["money"] },
+          dictionary: { databases: ["post"], services: ["auth"], scalars: ["money"] },
+          document: { databases: ["post"], scalars: ["money"] },
+          service: { databases: ["post"], services: ["auth"] },
+          signal: { databases: ["post"], services: ["auth"] },
+          store: { databases: [], services: [] },
+          template: { databases: [], services: [], scalars: [] },
+          unit: { databases: [], services: [], scalars: [] },
+          util: { databases: [], services: [], scalars: [] },
+          view: { databases: [], services: [], scalars: [] },
+          zone: { databases: [], services: [], scalars: [] },
+        },
+        libDeps: [],
+        pkgDeps: [],
+        dependencies: [],
+        devDependencies: [],
+        routes: ["./_index.tsx"],
+      },
+      [],
+    );
+
+    expect(info.getDatabaseModules()).toEqual(["post"]);
+    expect(info.getServiceModules()).toEqual(["auth"]);
+    expect(info.getScalarModules()).toEqual(["money"]);
+    expect(info.file.constant.databases.has("post")).toBe(true);
+    expect(info.file.dictionary.services.has("auth")).toBe(true);
+    expect(info.file.document.scalars.has("money")).toBe(true);
+  });
+});

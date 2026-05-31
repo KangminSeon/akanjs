@@ -1,5 +1,5 @@
 "use client";
-import { PigeonProps } from "pigeon-maps";
+import type { PigeonProps } from "pigeon-maps";
 import { createContext } from "react";
 
 interface MapViewContextType {

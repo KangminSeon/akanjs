@@ -1,5 +1,5 @@
-import { endpoint, internal, slice } from "@akanjs/signal";
-import { Admin } from "@shared/nest";
+import { Admin } from "@libs/shared/srvkit";
+import { endpoint, internal, slice } from "akanjs/signal";
 
 import * as cnst from "../cnst";
 import * as srv from "../srv";

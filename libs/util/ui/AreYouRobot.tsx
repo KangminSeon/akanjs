@@ -1,6 +1,7 @@
 // import { Turnstile, TurnstileProps } from "@marsidev/react-turnstile";
-import { TurnstileProps } from "@marsidev/react-turnstile";
-import { useTheme } from "next-themes";
+
+import { st } from "@libs/util/client";
+import type { TurnstileProps } from "@marsidev/react-turnstile";
 
 interface AreYouRobotProps {
   siteKey: string;
@@ -8,7 +9,8 @@ interface AreYouRobotProps {
   onSuccess: (token: string) => void;
 }
 export const AreYouRobot = ({ siteKey, options = {}, onSuccess }: AreYouRobotProps) => {
-  const { theme } = useTheme();
+  // const { theme } = useTheme();
+  const theme = st.use.theme();
   const applyTheme = theme === "dark" ? "dark" : theme === "light" ? "light" : "auto";
   return (
     <></>

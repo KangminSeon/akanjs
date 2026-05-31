@@ -1,14 +1,5 @@
 {
   "extends": "../../../tsconfig.json",
-  "compilerOptions": {
-    "declaration": true,
-    "declarationDir": "dist"
-  },
   "files": [],
-  "include": ["**/*.ts", "**/*.tsx"],
-  "references": [
-    {
-      "path": "./tsconfig.spec.json"
-    }
-  ]
+  "include": ["**/*.ts", "**/*.tsx"]
 }

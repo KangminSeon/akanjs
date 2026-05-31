@@ -1,0 +1,3 @@
+appName: akan
+main:
+  domains: ["www.akanjs.com", "akanjs.com"]

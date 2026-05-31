@@ -1,0 +1,51 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { resolveSsrPageEntries } from "./implicitRootLayout";
+
+const tempRoots: string[] = [];
+
+const makeTempRoot = async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "akan-implicit-root-layout-"));
+  tempRoots.push(root);
+  return root;
+};
+
+const write = async (filePath: string, content: string) => {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, content);
+};
+
+afterEach(async () => {
+  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+describe("resolveSsrPageEntries", () => {
+  test("inherits root layout static exports for grouped root boundaries", async () => {
+    const appRoot = await makeTempRoot();
+    const pageRoot = path.join(appRoot, "page");
+    const rootLayoutPath = path.join(pageRoot, "_layout.tsx");
+    const groupedLayoutPath = path.join(pageRoot, "(home)", "_layout.tsx");
+
+    await write(path.join(appRoot, "env", "env.client.ts"), "export const env = {};\n");
+    await write(rootLayoutPath, 'export const theme = "dark";\nexport const fonts = [{ name: "pretendard" }];\n');
+    await write(groupedLayoutPath, "export default function Layout({ children }) { return children; }\n");
+
+    const entries = await resolveSsrPageEntries({
+      appCwdPath: appRoot,
+      appName: "demo",
+      pageKeys: ["./_layout.tsx", "./(home)/_layout.tsx", "./(home)/_index.tsx"],
+    });
+
+    const groupedRoot = entries.find((entry) => entry.key === "./(home)/__root_layout.tsx");
+    expect(groupedRoot).toBeDefined();
+    expect(groupedRoot?.seedAbsPaths).toContain(rootLayoutPath);
+    expect(groupedRoot?.seedAbsPaths).toContain(groupedLayoutPath);
+
+    const generatedSource = await Bun.file(groupedRoot?.moduleAbsPath ?? "").text();
+    expect(generatedSource).toContain('import * as inheritedLayout from "../../../page/_layout.tsx";');
+    expect(generatedSource).toContain("theme={userLayout.theme ?? inheritedLayout.theme}");
+    expect(generatedSource).toContain("const userFonts = userLayout.fonts ?? inheritedLayout.fonts ?? [];");
+  });
+});
