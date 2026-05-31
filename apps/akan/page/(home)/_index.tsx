@@ -151,7 +151,7 @@ export default function Page() {
         en: "One page can become SEO-ready web and app-ready client screens with native-feeling transitions.",
         ko: "하나의 페이지가 SEO 가능한 웹과 앱에 어울리는 클라이언트 화면으로 함께 배포됩니다.",
       }),
-      src: "/crossPlatformDev_web.mp4",
+      src: "/cross_platform_dev_web.mp4",
     },
     {
       title: l.trans({ en: "Database & API Integration", ko: "데이터베이스 & API 통합" }),
@@ -159,7 +159,7 @@ export default function Page() {
         en: "Schema changes flow into database, validation, API contracts, and generated clients without hand wiring.",
         ko: "스키마 변경이 데이터베이스, 검증, API 계약, 생성된 클라이언트까지 수작업 연결 없이 이어집니다.",
       }),
-      src: "/Database&API_en.mp4",
+      src: "/database_api_en.mp4",
     },
     {
       title: l.trans({ en: "Full-Stack Type Safety", ko: "전체 스택 타입 안전" }),
@@ -167,7 +167,7 @@ export default function Page() {
         en: "Database schema changes automatically influence server, API, state management, and UI types.",
         ko: "데이터베이스 스키마 설정이 서버, API, 상태관리, UI 타입까지 타입안전하게 반영됩니다.",
       }),
-      src: "/Fullstack_Type_en.mp4",
+      src: "/fullstack_type_en.mp4",
     },
     {
       title: l.trans({ en: "Domain-Driven State Management", ko: "도메인 기반 상태 관리" }),
@@ -175,7 +175,7 @@ export default function Page() {
         en: "State, loading, pagination, and statistics follow the domain so UI code stays predictable.",
         ko: "상태, 로딩, 페이지네이션, 통계가 도메인을 따라가므로 UI 코드가 예측 가능해집니다.",
       }),
-      src: "/Domain_based.mp4",
+      src: "/domain_based.mp4",
     },
     {
       title: l.trans({ en: "Agent-Ready Code Generation", ko: "에이전트 친화적 코드 생성" }),
@@ -194,8 +194,8 @@ export default function Page() {
         ko: "CSR 클라이언트를 벗어나지 않고 하단에서 집중 흐름을 열 수 있습니다.",
       }),
       src: l.trans({
-        en: "/csr/bottomup_en_trimmed.mp4",
-        ko: "/csr/bottomup_ko_trimmed.mp4",
+        en: "/csr/bottomup_en.mp4",
+        ko: "/csr/bottomup_ko.mp4",
       }),
     },
     {
@@ -205,8 +205,8 @@ export default function Page() {
         ko: "다음 화면이 더 깊은 계층이 아닐 때 차분하게 맥락을 전환합니다.",
       }),
       src: l.trans({
-        en: "/csr/fade_en_trimmed.mp4",
-        ko: "/csr/fade_ko_trimmed.mp4",
+        en: "/csr/fade_en.mp4",
+        ko: "/csr/fade_ko.mp4",
       }),
     },
     {
@@ -216,8 +216,8 @@ export default function Page() {
         ko: "가벼운 확대 전환으로 다음 페이지에 시선을 자연스럽게 모읍니다.",
       }),
       src: l.trans({
-        en: "/csr/scale_en_trimmed.mp4",
-        ko: "/csr/scale_ko_trimmed.mp4",
+        en: "/csr/scale_en.mp4",
+        ko: "/csr/scale_ko.mp4",
       }),
     },
     {
@@ -227,8 +227,8 @@ export default function Page() {
         ko: "목록 위로 상세 화면을 쌓아 올리는 클라이언트 내비게이션을 만듭니다.",
       }),
       src: l.trans({
-        en: "/csr/stack_en_trimmed.mp4",
-        ko: "/csr/stack_ko_trimmed.mp4",
+        en: "/csr/stack_en.mp4",
+        ko: "/csr/stack_ko.mp4",
       }),
     },
   ];

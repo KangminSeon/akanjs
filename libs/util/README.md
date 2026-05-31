@@ -136,7 +136,7 @@ Essential library functions and constants:
 1. **Create your workspace**
 
 ```bash
-byb install -g akanjs --latest
+byb install -g @akanjs/cli --latest
 akan create-workspace
 ```
 
