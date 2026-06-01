@@ -45,7 +45,31 @@ describe("resolveSsrPageEntries", () => {
 
     const generatedSource = await Bun.file(groupedRoot?.moduleAbsPath ?? "").text();
     expect(generatedSource).toContain('import * as inheritedLayout from "../../../page/_layout.tsx";');
+    expect(generatedSource).not.toContain("<System.Provider");
+    expect(generatedSource).toContain(
+      "<UserLayout params={params} searchParams={searchParams}>{children}</UserLayout>",
+    );
+  });
+
+  test("keeps system provider for grouped root boundaries without an ancestor root", async () => {
+    const appRoot = await makeTempRoot();
+    const pageRoot = path.join(appRoot, "page");
+    const groupedLayoutPath = path.join(pageRoot, "(home)", "_layout.tsx");
+
+    await write(path.join(appRoot, "env", "env.client.ts"), "export const env = {};\n");
+    await write(groupedLayoutPath, 'export const theme = "dark";\n');
+
+    const entries = await resolveSsrPageEntries({
+      appCwdPath: appRoot,
+      appName: "demo",
+      pageKeys: ["./(home)/_layout.tsx", "./(home)/_index.tsx"],
+    });
+
+    const groupedRoot = entries.find((entry) => entry.key === "./(home)/__root_layout.tsx");
+    expect(groupedRoot).toBeDefined();
+
+    const generatedSource = await Bun.file(groupedRoot?.moduleAbsPath ?? "").text();
+    expect(generatedSource).toContain("<System.Provider");
     expect(generatedSource).toContain("theme={userLayout.theme ?? inheritedLayout.theme}");
-    expect(generatedSource).toContain("const userFonts = userLayout.fonts ?? inheritedLayout.fonts ?? [];");
   });
 });

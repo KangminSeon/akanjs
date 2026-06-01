@@ -68,6 +68,15 @@ function findRootBoundaries(pageKeys: string[], appCwdPath: string, basePaths: I
   return [...boundaries.values()].sort((a, b) => a.segments.join("/").localeCompare(b.segments.join("/")));
 }
 
+function hasAncestorRootBoundary(boundary: RootBoundary, boundaries: RootBoundary[]): boolean {
+  return boundaries.some(
+    (candidate) =>
+      candidate !== boundary &&
+      candidate.segments.length < boundary.segments.length &&
+      candidate.segments.every((segment, index) => boundary.segments[index] === segment),
+  );
+}
+
 function findExplicitRootLayoutAbsPath(pageKeys: string[], appCwdPath: string): string | null {
   const rootLayoutKey = pageKeys.find((key) => {
     const segments = getRootBoundarySegments(key);
@@ -96,6 +105,7 @@ async function writeGeneratedRootLayoutFile(opts: {
   boundary: RootBoundary;
   rootSourceAbsPath: string | null;
   includeStInit: boolean;
+  includeSystemProvider: boolean;
 }): Promise<string> {
   await assertEnvClientConvention(opts.appCwdPath, opts.appName);
   const absPath = implicitRootLayoutAbsPath(opts.appCwdPath, opts.boundary.segments);
@@ -124,7 +134,9 @@ async function writeGeneratedRootLayoutFile(opts: {
   const userImport = sourceSpecifier
     ? `import UserLayout, * as userLayout from ${JSON.stringify(sourceSpecifier)};\n`
     : "const UserLayout = ({ children }) => children;\nconst userLayout = {};\n";
-  const source = `import type { LayoutProps, PageProps } from "akanjs/client";\nimport { loadFonts } from "akanjs/client";\nimport { System } from "akanjs/ui";\nimport { env } from "@apps/${opts.appName}/env/env.client";\n${clientImport}${inheritedImport}${userImport}\nconst userFonts = userLayout.fonts ?? inheritedLayout.fonts ?? [];\nconst defaultFonts = userFonts.filter((font) => font.default);\nif (defaultFonts.length > 1) throw new Error("[route-convention] only one default font is allowed per root layout");\nconst defaultFont = defaultFonts[0];\nconst defaultFontClassName = defaultFont ? (defaultFont.className ?? \`font-\${defaultFont.name}\`) : undefined;\n\nexport async function generateHead(props: PageProps) {\n  if (userLayout.generateHead) return userLayout.generateHead(props);\n  if (userLayout.head !== undefined) return userLayout.head;\n  if (inheritedLayout.generateHead) return inheritedLayout.generateHead(props);\n  return inheritedLayout.head;\n}\n\nexport default function GeneratedLayout({ children, params, searchParams }: LayoutProps) {\n  return (\n    <System.Provider\n      of={GeneratedLayout as never}\n      appName=${JSON.stringify(opts.appName)}\n      ${prefix ? `prefix=${JSON.stringify(prefix)}\n      ` : ""}params={params}\n      manifest={userLayout.manifest ?? inheritedLayout.manifest}\n      env={env}\n      theme={userLayout.theme ?? inheritedLayout.theme}\n      fonts={loadFonts(userFonts)}\n      className={defaultFontClassName}\n      gaTrackingId={userLayout.gaTrackingId ?? inheritedLayout.gaTrackingId}\n      layoutStyle={userLayout.layoutStyle ?? inheritedLayout.layoutStyle}\n      reconnect={userLayout.reconnect ?? inheritedLayout.reconnect ?? false}\n    >\n      <UserLayout params={params} searchParams={searchParams}>{children}</UserLayout>\n    </System.Provider>\n  );\n}\n`;
+  const source = opts.includeSystemProvider
+    ? `import type { LayoutProps, PageProps } from "akanjs/client";\nimport { loadFonts } from "akanjs/client";\nimport { System } from "akanjs/ui";\nimport { env } from "@apps/${opts.appName}/env/env.client";\n${clientImport}${inheritedImport}${userImport}\nconst userFonts = userLayout.fonts ?? inheritedLayout.fonts ?? [];\nconst defaultFonts = userFonts.filter((font) => font.default);\nif (defaultFonts.length > 1) throw new Error("[route-convention] only one default font is allowed per root layout");\nconst defaultFont = defaultFonts[0];\nconst defaultFontClassName = defaultFont ? (defaultFont.className ?? \`font-\${defaultFont.name}\`) : undefined;\n\nexport async function generateHead(props: PageProps) {\n  if (userLayout.generateHead) return userLayout.generateHead(props);\n  if (userLayout.head !== undefined) return userLayout.head;\n  if (inheritedLayout.generateHead) return inheritedLayout.generateHead(props);\n  return inheritedLayout.head;\n}\n\nexport default function GeneratedLayout({ children, params, searchParams }: LayoutProps) {\n  return (\n    <System.Provider\n      of={GeneratedLayout as never}\n      appName=${JSON.stringify(opts.appName)}\n      ${prefix ? `prefix=${JSON.stringify(prefix)}\n      ` : ""}params={params}\n      manifest={userLayout.manifest ?? inheritedLayout.manifest}\n      env={env}\n      theme={userLayout.theme ?? inheritedLayout.theme}\n      fonts={loadFonts(userFonts)}\n      className={defaultFontClassName}\n      gaTrackingId={userLayout.gaTrackingId ?? inheritedLayout.gaTrackingId}\n      layoutStyle={userLayout.layoutStyle ?? inheritedLayout.layoutStyle}\n      reconnect={userLayout.reconnect ?? inheritedLayout.reconnect ?? false}\n    >\n      <UserLayout params={params} searchParams={searchParams}>{children}</UserLayout>\n    </System.Provider>\n  );\n}\n`
+    : `import type { LayoutProps, PageProps } from "akanjs/client";\n${inheritedImport}${userImport}\nexport async function generateHead(props: PageProps) {\n  if (userLayout.generateHead) return userLayout.generateHead(props);\n  if (userLayout.head !== undefined) return userLayout.head;\n  if (inheritedLayout.generateHead) return inheritedLayout.generateHead(props);\n  return inheritedLayout.head;\n}\n\nexport default function GeneratedLayout({ children, params, searchParams }: LayoutProps) {\n  return <UserLayout params={params} searchParams={searchParams}>{children}</UserLayout>;\n}\n`;
   await Bun.write(absPath, source);
   return absPath;
 }
@@ -143,6 +155,7 @@ export async function resolveSsrPageEntries(opts: {
   const hasSt = await appHasStModule(opts.appCwdPath);
   const basePaths = opts.basePaths ?? [];
   const rootSourceAbsPath = findExplicitRootLayoutAbsPath(opts.pageKeys, opts.appCwdPath);
+  const rootBoundaries = findRootBoundaries(opts.pageKeys, opts.appCwdPath, basePaths);
   const rootLayoutKeys = new Set(
     opts.pageKeys.filter((key) => {
       const segments = getRootBoundarySegments(key);
@@ -156,7 +169,7 @@ export async function resolveSsrPageEntries(opts: {
       moduleAbsPath: path.resolve(absPageDir, key),
     }));
   const generated = await Promise.all(
-    findRootBoundaries(opts.pageKeys, opts.appCwdPath, basePaths).map(async (boundary) => ({
+    rootBoundaries.map(async (boundary) => ({
       key: implicitRootLayoutKey(boundary.segments),
       moduleAbsPath: await writeGeneratedRootLayoutFile({
         appCwdPath: opts.appCwdPath,
@@ -164,6 +177,7 @@ export async function resolveSsrPageEntries(opts: {
         boundary,
         rootSourceAbsPath,
         includeStInit: hasSt && boundary.segments.length === 0,
+        includeSystemProvider: !hasAncestorRootBoundary(boundary, rootBoundaries),
       }),
       seedAbsPaths: [...new Set([boundary.sourceAbsPath, rootSourceAbsPath].filter((absPath) => absPath !== null))],
     })),

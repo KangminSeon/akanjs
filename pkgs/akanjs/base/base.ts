@@ -181,7 +181,6 @@ export class DataList<Light extends { id: string }> {
   }
 }
 
-// export const version = "0.9.0";
 export const logo = `
      _    _                  _     
     / \\  | | ____ _ _ __    (_)___ 
