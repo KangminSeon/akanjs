@@ -33,7 +33,7 @@ export type PurifiedModel<T> = T extends Upload[]
   ? FileList
   : T extends (infer S)[]
     ? PurifiedModel<S>[]
-    : T extends string | number | boolean | Dayjs
+    : T extends string | number | boolean | Dayjs | File
       ? T
       : T extends Map<infer K, infer V>
         ? Map<K, PurifiedModel<V>>
