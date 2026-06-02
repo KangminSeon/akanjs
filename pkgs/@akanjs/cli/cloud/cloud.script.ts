@@ -4,7 +4,11 @@ import { ApplicationScript } from "../application/application.script";
 import { PackageScript } from "../package/package.script";
 import { CloudRunner } from "./cloud.runner";
 
-export class CloudScript extends script("cloud", [CloudRunner, ApplicationScript, PackageScript]) {
+export class CloudScript extends script("cloud", [
+  CloudRunner,
+  ApplicationScript,
+  PackageScript,
+]) {
   async login(workspace: Workspace) {
     await this.cloudRunner.login();
   }
@@ -21,18 +25,36 @@ export class CloudScript extends script("cloud", [CloudRunner, ApplicationScript
     const session = new AiSession("general", { workspace, isContinued: true });
     await session.ask(question);
   }
-  async deployAkan(workspace: Workspace, { test = true, registryUrl }: { test?: boolean; registryUrl?: string } = {}) {
+  async downloadEnv(workspace: Workspace) {
+    await this.cloudRunner.downloadEnv(workspace);
+  }
+  async uploadEnv(workspace: Workspace) {
+    const { path, files } = await this.cloudRunner.gatherEnvFiles(workspace);
+  }
+
+  async deployAkan(
+    workspace: Workspace,
+    { test = true, registryUrl }: { test?: boolean; registryUrl?: string } = {},
+  ) {
     const akanPkgs = await this.cloudRunner.getAkanPkgs(workspace);
     await this.packageScript.updateWorskpaceRootPackageJson(workspace);
-    const pkgs = akanPkgs.map((pkgName) => PkgExecutor.from(workspace, pkgName));
+    const pkgs = akanPkgs.map((pkgName) =>
+      PkgExecutor.from(workspace, pkgName),
+    );
     if (test) for (const pkg of pkgs) await this.applicationScript.test(pkg);
     for (const pkg of pkgs) await this.packageScript.buildPackage(pkg);
     await this.cloudRunner.deployAkan(workspace, akanPkgs, { registryUrl });
   }
-  async update(workspace: Workspace, tag: string = "latest", { registryUrl }: { registryUrl?: string } = {}) {
+  async update(
+    workspace: Workspace,
+    tag: string = "latest",
+    { registryUrl }: { registryUrl?: string } = {},
+  ) {
     const spinner = workspace.spinning("Updating Akan.js packages and CLI...");
     await this.cloudRunner.update(workspace, tag, { registryUrl });
-    spinner.succeed("Akan.js packages and CLI updated, global version is below");
+    spinner.succeed(
+      "Akan.js packages and CLI updated, global version is below",
+    );
     Logger.raw("> Akan version: ");
     await workspace.spawn("akan", ["--version"], { stdio: "inherit" });
   }
