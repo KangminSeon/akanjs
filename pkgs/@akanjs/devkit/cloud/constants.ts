@@ -4,12 +4,8 @@ import type { SupportedLlmModel } from "../aiEditor";
 export const basePath = `${Bun.env.HOME ?? Bun.env.USERPROFILE}/.akan`;
 export const configPath = `${basePath}/config.json`;
 export const akanCloudHost =
-  process.env.AKAN_PUBLIC_OPERATION_MODE === "local"
-    ? "http://localhost"
-    : "https://cloud.akanjs.com";
-export const akanCloudUrl = `${akanCloudHost}${
-  process.env.AKAN_PUBLIC_OPERATION_MODE === "local" ? ":8282" : ""
-}/api`;
+  process.env.AKAN_PUBLIC_OPERATION_MODE === "local" ? "http://localhost" : "https://cloud.akanjs.com";
+export const akanCloudUrl = `${akanCloudHost}${process.env.AKAN_PUBLIC_OPERATION_MODE === "local" ? ":8282" : ""}/api`;
 
 export interface HostConfig {
   auth?: {
@@ -24,17 +20,19 @@ export interface HostConfigDto {
   };
 }
 export const defaultHostConfig: HostConfig = {};
+export interface RemoteEnvServerConfig {
+  host: string;
+  username?: string;
+  port?: number;
+}
 export interface AkanGlobalConfig {
-  cloudHost: {
-    [key: string]: HostConfigDto;
-  };
-  llm: {
-    model: SupportedLlmModel;
-    apiKey: string;
-  } | null;
+  cloudHost: { [key: string]: HostConfigDto };
+  remoteEnvServers: Record<string, RemoteEnvServerConfig>;
+  llm: { model: SupportedLlmModel; apiKey: string } | null;
 }
 export const defaultAkanGlobalConfig: AkanGlobalConfig = {
   cloudHost: {},
+  remoteEnvServers: {},
   llm: null,
 };
 

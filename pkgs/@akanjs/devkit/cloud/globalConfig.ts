@@ -12,15 +12,19 @@ import {
   defaultHostConfig,
   type HostConfig,
   type HostConfigDto,
+  type RemoteEnvServerConfig,
 } from "./constants";
 
 export class GlobalConfig {
   static async #getAkanGlobalConfig(): Promise<AkanGlobalConfig> {
     const exists = await FileSys.fileExists(configPath);
-    const akanConfig = exists
-      ? await FileSys.readJson<AkanGlobalConfig>(configPath)
-      : defaultAkanGlobalConfig;
-    return akanConfig;
+    const akanConfig = exists ? await FileSys.readJson<Partial<AkanGlobalConfig>>(configPath) : {};
+    return {
+      ...defaultAkanGlobalConfig,
+      ...akanConfig,
+      cloudHost: akanConfig.cloudHost ?? defaultAkanGlobalConfig.cloudHost,
+      remoteEnvServers: akanConfig.remoteEnvServers ?? defaultAkanGlobalConfig.remoteEnvServers,
+    };
   }
   static async #setAkanGlobalConfig(akanConfig: AkanGlobalConfig) {
     await mkdir(basePath, { recursive: true });
@@ -28,9 +32,7 @@ export class GlobalConfig {
   }
   static async getHostConfig(host = akanCloudHost): Promise<HostConfig> {
     const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
-    return GlobalConfig.toHostConfig(
-      akanConfig.cloudHost[host] ?? defaultHostConfig,
-    );
+    return GlobalConfig.toHostConfig(akanConfig.cloudHost[host] ?? defaultHostConfig);
   }
   static async setHostConfig(host = akanCloudHost, config: HostConfig = {}) {
     const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
@@ -44,6 +46,28 @@ export class GlobalConfig {
   static async setLlmConfig(llmConfig: AkanGlobalConfig["llm"]) {
     const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
     await GlobalConfig.#setAkanGlobalConfig({ ...akanConfig, llm: llmConfig });
+  }
+  static async getRemoteEnvServers(): Promise<AkanGlobalConfig["remoteEnvServers"]> {
+    const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
+    return akanConfig.remoteEnvServers;
+  }
+  static async setRemoteEnvServer(name: string, config: RemoteEnvServerConfig) {
+    const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
+    await GlobalConfig.#setAkanGlobalConfig({
+      ...akanConfig,
+      remoteEnvServers: {
+        ...akanConfig.remoteEnvServers,
+        [name]: config,
+      },
+    });
+  }
+  static async removeRemoteEnvServer(name: string) {
+    const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
+    const { [name]: _, ...remoteEnvServers } = akanConfig.remoteEnvServers;
+    await GlobalConfig.#setAkanGlobalConfig({
+      ...akanConfig,
+      remoteEnvServers,
+    });
   }
   static needRefreshToken(accessToken: AccessToken): boolean {
     return !!accessToken?.expiresAt?.isBefore(dayjs().add(1, "hour"));

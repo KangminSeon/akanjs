@@ -261,10 +261,30 @@ export class Executor {
     });
     return new Promise((resolve, reject) => {
       proc.on("error", (error) => {
-        reject(new CommandExecutionError({ command, cwd, code: null, signal: null, stdout, stderr, cause: error }));
+        reject(
+          new CommandExecutionError({
+            command,
+            cwd,
+            code: null,
+            signal: null,
+            stdout,
+            stderr,
+            cause: error,
+          }),
+        );
       });
       proc.on("exit", (code, signal) => {
-        if (!!code || signal) reject(new CommandExecutionError({ command, cwd, code, signal, stdout, stderr }));
+        if (!!code || signal)
+          reject(
+            new CommandExecutionError({
+              command,
+              cwd,
+              code,
+              signal,
+              stdout,
+              stderr,
+            }),
+          );
         else resolve({ code, signal });
       });
     });
@@ -293,12 +313,31 @@ export class Executor {
     return new Promise((resolve, reject) => {
       proc.on("error", (error) => {
         reject(
-          new CommandExecutionError({ command, args, cwd, code: null, signal: null, stdout, stderr, cause: error }),
+          new CommandExecutionError({
+            command,
+            args,
+            cwd,
+            code: null,
+            signal: null,
+            stdout,
+            stderr,
+            cause: error,
+          }),
         );
       });
       proc.on("close", (code, signal) => {
         if (code !== 0 || signal)
-          reject(new CommandExecutionError({ command, args, cwd, code, signal, stdout, stderr }));
+          reject(
+            new CommandExecutionError({
+              command,
+              args,
+              cwd,
+              code,
+              signal,
+              stdout,
+              stderr,
+            }),
+          );
         else resolve(stdout);
       });
     });
@@ -345,7 +384,17 @@ export class Executor {
       });
       proc.on("exit", (code, signal) => {
         if (!!code || signal)
-          reject(new CommandExecutionError({ command: modulePath, args, cwd, code, signal, stdout, stderr }));
+          reject(
+            new CommandExecutionError({
+              command: modulePath,
+              args,
+              cwd,
+              code,
+              signal,
+              stdout,
+              stderr,
+            }),
+          );
         else resolve({ code, signal });
       });
     });
@@ -490,7 +539,10 @@ export class Executor {
       const result = {
         ...extendsTsconfig,
         ...tsconfig,
-        compilerOptions: { ...extendsTsconfig.compilerOptions, ...tsconfig.compilerOptions },
+        compilerOptions: {
+          ...extendsTsconfig.compilerOptions,
+          ...tsconfig.compilerOptions,
+        },
       } as TsConfigJson;
       this.#tsconfig = result;
       return result;
@@ -571,7 +623,9 @@ export class Executor {
         content,
       );
       this.logger.verbose(`Apply template ${templatePath} to ${convertedTargetPath}`);
-      return this.writeFile(convertedTargetPath, convertedContent, { overwrite });
+      return this.writeFile(convertedTargetPath, convertedContent, {
+        overwrite,
+      });
     } else if (staticTemplateFileExtensions.has(path.extname(targetPath).toLowerCase())) {
       const convertedTargetPath = Object.entries(dict).reduce(
         (path, [key, value]) => path.replace(new RegExp(`__${key}__`, "g"), value),
@@ -606,7 +660,12 @@ export class Executor {
     if ((await stat(prefixTemplatePath)).isFile()) {
       const filename = path.basename(prefixTemplatePath);
       const fileContent = await this.#applyTemplateFile(
-        { templatePath: prefixTemplatePath, targetPath: path.join(basePath, filename), scanInfo, overwrite },
+        {
+          templatePath: prefixTemplatePath,
+          targetPath: path.join(basePath, filename),
+          scanInfo,
+          overwrite,
+        },
         dict,
         options,
       );
@@ -619,7 +678,12 @@ export class Executor {
             const subpath = path.join(templatePath, subdir);
             if ((await stat(subpath)).isFile()) {
               const fileContent = await this.#applyTemplateFile(
-                { templatePath: subpath, targetPath: path.join(basePath, subdir), scanInfo, overwrite },
+                {
+                  templatePath: subpath,
+                  targetPath: path.join(basePath, subdir),
+                  scanInfo,
+                  overwrite,
+                },
                 dict,
                 options,
               );
@@ -690,7 +754,10 @@ export class Executor {
   }> {
     const path = this.getPath(filePath);
     const linter = this.getLinter();
-    const { results, errors, warnings } = await linter.lint(path, { fix, dryRun });
+    const { results, errors, warnings } = await linter.lint(path, {
+      fix,
+      dryRun,
+    });
     const message = linter.formatLintResults(results);
     return { results, message, errors, warnings };
   }
@@ -726,6 +793,7 @@ export class WorkspaceExecutor extends Executor {
 
     const appName = sourceEnv.AKAN_PUBLIC_APP_NAME;
     const workspaceRoot = sourceEnv.AKAN_WORKSPACE_ROOT;
+    const workspaceId = sourceEnv.AKAN_WORKSPACE_ID;
 
     const repoName = sourceEnv.AKAN_PUBLIC_REPO_NAME;
     if (!repoName) throw new Error("AKAN_PUBLIC_REPO_NAME is not set");
@@ -743,7 +811,16 @@ export class WorkspaceExecutor extends Executor {
       | "local"
       | undefined;
     if (!env) throw new Error("AKAN_PUBLIC_ENV is not set");
-    return { ...(appName ? { appName } : {}), workspaceRoot, repoName, serveDomain, env, portOffset };
+    return { ...(appName ? { appName } : {}), workspaceRoot, repoName, serveDomain, env, portOffset, workspaceId };
+  }
+  getWorkspaceId<AllowEmpty extends boolean = false>({
+    allowEmpty,
+  }: {
+    allowEmpty?: AllowEmpty;
+  } = {}): AllowEmpty extends true ? string | undefined : string {
+    const { workspaceId } = WorkspaceExecutor.getBaseDevEnv();
+    if (!workspaceId && !allowEmpty) throw new Error("Workspace ID is not found");
+    return workspaceId as AllowEmpty extends true ? string | undefined : string;
   }
   async scan(): Promise<WorkspaceInfo> {
     return await WorkspaceInfo.fromExecutor(this);
@@ -976,8 +1053,12 @@ export class SysExecutor extends Executor {
     if (this.#scanInfo && !refresh) return this.#scanInfo;
     const scanInfo =
       this.type === "app"
-        ? await AppInfo.fromExecutor(this as unknown as AppExecutor, { refresh })
-        : await LibInfo.fromExecutor(this as unknown as LibExecutor, { refresh });
+        ? await AppInfo.fromExecutor(this as unknown as AppExecutor, {
+            refresh,
+          })
+        : await LibInfo.fromExecutor(this as unknown as LibExecutor, {
+            refresh,
+          });
     if (write) {
       await Promise.all(this.#getScanTemplateTasks(scanInfo));
       await this.writeJson(`akan.${this.type}.json`, scanInfo.getScanResult());
@@ -1147,7 +1228,11 @@ export class SysExecutor extends Executor {
       ),
     };
     const scanInfo = await this.scan();
-    const fileContents = await this._applyTemplate({ ...options, scanInfo, dict });
+    const fileContents = await this._applyTemplate({
+      ...options,
+      scanInfo,
+      dict,
+    });
     await this.scan();
     return fileContents;
   }
@@ -1247,7 +1332,11 @@ export class AppExecutor extends SysExecutor {
       this.#pageKeys = [];
       return this.#pageKeys;
     }
-    for await (const rel of glob.scan({ cwd: pageDir, absolute: false, onlyFiles: true })) {
+    for await (const rel of glob.scan({
+      cwd: pageDir,
+      absolute: false,
+      onlyFiles: true,
+    })) {
       const segments = rel.split(path.sep);
       if (segments.some((s) => s === "node_modules")) continue;
       const posix = segments.join("/");
@@ -1255,7 +1344,10 @@ export class AppExecutor extends SysExecutor {
       validatePageSourceFile(posix, { filePath: absPath });
       if (!isRouteSourceFile(posix)) continue;
       const key = `./${posix}`;
-      validateSubRoutePageKey(key, akanConfig.basePaths, { appName: this.name, filePath: absPath });
+      validateSubRoutePageKey(key, akanConfig.basePaths, {
+        appName: this.name,
+        filePath: absPath,
+      });
       const parsed = parseRouteModuleKey(key);
       if (parsed.isInternalRootLayout) {
         throw new Error(`[route-convention] __root_layout is reserved for Akan.js generated root layout: ${absPath}`);
@@ -1298,7 +1390,11 @@ export class AppExecutor extends SysExecutor {
     ]);
   }
   async scanSync({ refresh = false, write = true }: { refresh?: boolean; write?: boolean } = {}) {
-    const scanInfo = (await this.scan({ refresh, write, writeLib: write })) as AppInfo;
+    const scanInfo = (await this.scan({
+      refresh,
+      write,
+      writeLib: write,
+    })) as AppInfo;
     if (write) await this.syncAssets(scanInfo.getScanResult().libDeps);
     return scanInfo;
   }
@@ -1365,7 +1461,10 @@ export class PkgExecutor extends Executor {
     return scanInfo;
   }
   async #getDependencyVersion(rootPackageJson: PackageJson, dep: string): Promise<string | undefined> {
-    const rootDeps = { ...rootPackageJson.dependencies, ...rootPackageJson.devDependencies };
+    const rootDeps = {
+      ...rootPackageJson.dependencies,
+      ...rootPackageJson.devDependencies,
+    };
     const rootVersion = rootDeps[dep];
     if (rootVersion) return rootVersion;
 
@@ -1426,7 +1525,14 @@ export class PkgExecutor extends Executor {
     const distPkgJson: PackageJson = {
       ...pkgJson,
       type: "module",
-      exports: { ...pkgJson.exports, ".": { import: "./index.ts", types: "./index.ts", default: "./index.ts" } },
+      exports: {
+        ...pkgJson.exports,
+        ".": {
+          import: "./index.ts",
+          types: "./index.ts",
+          default: "./index.ts",
+        },
+      },
       engines: { bun: ">=1.3.13" },
       ...dependencyMaps,
     };
