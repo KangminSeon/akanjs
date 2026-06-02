@@ -102,6 +102,13 @@ export class PackageRunner extends runner("package") {
         pkg.generateTsconfigJson(),
       ]);
     }
+    await this.#copyPackageReadmes(pkg);
+  }
+
+  async #copyPackageReadmes(pkg: Pkg) {
+    await Promise.all(
+      ["README.md", "README.ko.md"].map((fileName) => pkg.cp(fileName, `${pkg.dist.cwdPath}/${fileName}`)),
+    );
   }
 
   async updateWorskpaceRootPackageJson(workspace: Workspace, rootPackageJson: PackageJson) {

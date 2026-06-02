@@ -1,4 +1,5 @@
 import path from "node:path";
+import { optimize } from "@tailwindcss/node";
 import type { BaseBuildArtifact } from "akanjs/server";
 import { resolveSsrPageEntriesForApp } from "../artifact/implicitRootLayout";
 import { computeRouteSeedIndex, type RouteSeedIndex, saveRouteSeedIndex } from "../artifact/routeSeedIndex";
@@ -14,6 +15,11 @@ export interface BuildSsrBaseArtifactResult {
   seedIndex: RouteSeedIndex;
   cssCompiler: CssCompiler;
   optimizedFonts: Awaited<ReturnType<FontOptimizer["optimize"]>>;
+}
+
+export function prepareCssAsset(command: "build" | "start", basePath: string, cssText: string): string {
+  if (command !== "build") return cssText;
+  return optimize(cssText, { file: `${basePath || "root"}.css`, minify: true }).code;
 }
 
 export class SsrBaseArtifactBuilder {
@@ -143,13 +149,14 @@ export class SsrBaseArtifactBuilder {
 
   async #writeCssAsset(basePath: string, cssText: string) {
     const cssAssetName = basePath || "root";
-    const cssHash = Bun.hash(`${basePath}\n${cssText}`).toString(36);
+    const preparedCssText = await prepareCssAsset(this.#command, basePath, cssText);
+    const cssHash = Bun.hash(`${basePath}\n${preparedCssText}`).toString(36);
     const [cssRelPath, cssUrl] = [
       `styles/${cssAssetName}-${cssHash}.css`,
       `/_akan/styles/${cssAssetName}-${cssHash}.css`,
     ];
-    await Bun.write(path.join(this.#absArtifactDir, cssRelPath), cssText);
-    this.#app.verbose(`[base-artifact] wrote ${cssText.length} bytes of CSS for ${basePath} -> ${cssRelPath}`);
+    await Bun.write(path.join(this.#absArtifactDir, cssRelPath), preparedCssText);
+    this.#app.verbose(`[base-artifact] wrote ${preparedCssText.length} bytes of CSS for ${basePath} -> ${cssRelPath}`);
     return [basePath, { cssUrl, cssRelPath }] as const;
   }
 }

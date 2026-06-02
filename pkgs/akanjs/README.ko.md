@@ -41,7 +41,7 @@ bunx create-akan-workspace@latest
 CLI를 전역으로 설치해서 사용할 수도 있습니다.
 
 ```bash
-bun install -g akanjs --latest
+bun install -g @akanjs/cli --latest
 akan create-workspace
 cd <workspace-name>
 akan start <app-name> --open

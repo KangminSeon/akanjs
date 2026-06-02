@@ -64,6 +64,11 @@ const getConfiguredBasePaths = () => new Set(parseBasePaths(process.env.AKAN_PUB
 
 const shouldExposeBasePath = () => getEnv().operationMode === "local";
 
+const getLocaleFromPathname = (pathname: string) => {
+  const [firstSegment] = pathname.split("/").filter(Boolean);
+  return parseAkanI18nEnv().locales.find((locale) => locale === firstSegment);
+};
+
 const getServerBasePath = (reqPathname: string, lang: string, headerBasePath: string | undefined, fallback: string) => {
   return (
     getBasePathFromPathname(reqPathname, {
@@ -200,6 +205,9 @@ class Router {
   #getNavigationPathInfo(href: string) {
     return this.#getPathInfo(href, shouldExposeBasePath() ? this.#prefix : "");
   }
+  #getVisiblePathInfo(href: string, lang = this.#lang) {
+    return getPathInfo(href, lang, shouldExposeBasePath() ? this.#prefix : "");
+  }
   #postPathChange({ path, pathname, hash }: { path: string; pathname: string; hash: string }) {
     Logger.log(`pathChange-start:${path}${hash ? `#${hash}` : ""}`);
     window.parent.postMessage({ type: "pathChange", path, pathname, hash }, "*");
@@ -256,9 +264,13 @@ class Router {
   setLang(lang: string) {
     if (getEnv().side === "server") throw new Error("setLang is only available in client side");
     this.#checkInitialized();
-    const { path } = getPathInfo(window.location.pathname, this.#lang, this.#prefix);
+    const currentLang = getLocaleFromPathname(window.location.pathname) ?? this.#lang;
+    const { path, search, hash } = this.#getVisiblePathInfo(
+      `${window.location.pathname}${window.location.search ?? ""}${window.location.hash ?? ""}`,
+      currentLang,
+    );
     this.#lang = lang;
-    this.#instance.replace(`/${lang}${path}`);
+    this.#instance.replace(`${path}${search ? `?${search}` : ""}${hash ? `#${hash}` : ""}`);
     return undefined as never;
   }
   getPath(pathname = window.location.pathname) {

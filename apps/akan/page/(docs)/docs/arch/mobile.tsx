@@ -173,8 +173,8 @@ export const pageConfig = {
               {
                 title: "bottomup",
                 src: l.trans({
-                  en: "/csr/bottomup_en_trimmed.mp4",
-                  ko: "/csr/bottomup_ko_trimmed.mp4",
+                  en: "/csr/bottomup_en.mp4",
+                  ko: "/csr/bottomup_ko.mp4",
                 }),
                 desc: l.trans({
                   en: "Good for modal-like flows or pages that should rise from the bottom.",
@@ -184,8 +184,8 @@ export const pageConfig = {
               {
                 title: "fade",
                 src: l.trans({
-                  en: "/csr/fade_en_trimmed.mp4",
-                  ko: "/csr/fade_ko_trimmed.mp4",
+                  en: "/csr/fade_en.mp4",
+                  ko: "/csr/fade_ko.mp4",
                 }),
                 desc: l.trans({
                   en: "Keeps the movement calm when the screen context changes without hierarchy.",
@@ -195,8 +195,8 @@ export const pageConfig = {
               {
                 title: "scale",
                 src: l.trans({
-                  en: "/csr/scale_en_trimmed.mp4",
-                  ko: "/csr/scale_ko_trimmed.mp4",
+                  en: "/csr/scale_en.mp4",
+                  ko: "/csr/scale_ko.mp4",
                 }),
                 desc: l.trans({
                   en: "Adds a light zoom motion for focused entry into the next page.",
@@ -206,8 +206,8 @@ export const pageConfig = {
               {
                 title: "stack",
                 src: l.trans({
-                  en: "/csr/stack_en_trimmed.mp4",
-                  ko: "/csr/stack_ko_trimmed.mp4",
+                  en: "/csr/stack_en.mp4",
+                  ko: "/csr/stack_ko.mp4",
                 }),
                 desc: l.trans({
                   en: "Works well for detail pages that push over a list or parent screen.",

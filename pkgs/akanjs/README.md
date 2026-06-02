@@ -40,7 +40,7 @@ bunx create-akan-workspace@latest
 Or install the CLI globally:
 
 ```bash
-bun install -g akanjs --latest
+bun install -g @akanjs/cli --latest
 akan create-workspace
 cd <workspace-name>
 akan start <app-name> --open
