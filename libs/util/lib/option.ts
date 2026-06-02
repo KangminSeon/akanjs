@@ -95,8 +95,8 @@ export const option = new AkanOption<ModulesOptions>().use((options) => {
     baseDir: "local",
     urlPrefix:
       options.operationMode === "local"
-        ? `http://localhost:${process.env.PORT ?? options.port ?? 8282}/backend/localFile/getBlob`
-        : "/backend/localFile/getBlob",
+        ? `http://localhost:${process.env.PORT ?? options.port ?? 8282}/api/localFile/getBlob`
+        : "/api/localFile/getBlob",
   });
   return {
     cloudflareApi: options.cloudflare ? new CloudflareApi(options.cloudflare) : null,

@@ -180,8 +180,8 @@ export class FileEndpoint extends endpoint(srv.file, ({ mutation }) => ({
         <Docs.Description>
           <div>
             {l.trans({
-              en: "If your local storage returns URLs like `/backend/localFile/getBlob/...`, add a tiny endpoint that reads the file stream and returns it as a response.",
-              ko: "로컬 저장소가 `/backend/localFile/getBlob/...` 같은 URL을 반환한다면, 파일 stream을 읽어 Response로 돌려주는 작은 endpoint를 추가합니다.",
+              en: "If your local storage returns URLs like `/api/localFile/getBlob/...`, add a tiny endpoint that reads the file stream and returns it as a response.",
+              ko: "로컬 저장소가 `/api/localFile/getBlob/...` 같은 URL을 반환한다면, 파일 stream을 읽어 Response로 돌려주는 작은 endpoint를 추가합니다.",
             })}
           </div>
         </Docs.Description>
