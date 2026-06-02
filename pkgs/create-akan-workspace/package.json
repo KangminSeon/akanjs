@@ -1,7 +1,7 @@
 {
   "sourceType": "module",
   "name": "create-akan-workspace",
-  "version": "2.1.1-rc.2",
+  "version": "2.1.1",
   "bin": {
     "create-akan-workspace": "index.js"
   },
