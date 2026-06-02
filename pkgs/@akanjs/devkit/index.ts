@@ -9,6 +9,7 @@ export * from "./artifact";
 export * from "./builder";
 export * from "./capacitorApp";
 export * from "./cloud";
+export * from "./cloud";
 export * from "./commandDecorators";
 export * from "./createTunnel";
 export * from "./dependencyScanner";

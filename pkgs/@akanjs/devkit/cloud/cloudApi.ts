@@ -1,4 +1,9 @@
-import { type AccessToken, type AccessTokenDto, akanCloudHost, type HostConfig } from "./constants";
+import {
+  type AccessToken,
+  type AccessTokenDto,
+  akanCloudHost,
+  type HostConfig,
+} from "./constants";
 import { GlobalConfig } from "./globalConfig";
 
 class HttpClient {
@@ -8,7 +13,10 @@ class HttpClient {
     this.baseUrl = baseUrl;
     this.headers = headers;
   }
-  async get<T>(url: string, { headers }: { headers?: Record<string, string> } = {}): Promise<T> {
+  async get<T>(
+    url: string,
+    { headers }: { headers?: Record<string, string> } = {},
+  ): Promise<T> {
     const response = await fetch(`${this.baseUrl}${url}`, {
       headers: {
         "Content-Type": "application/json",
@@ -18,12 +26,25 @@ class HttpClient {
     });
     return response.json();
   }
-  async getFile(url: string, localPath: string, headers?: Record<string, string>): Promise<void> {
-    const response = await fetch(`${this.baseUrl}${url}`, { headers: { ...this.headers, ...headers } });
-    if (!response.ok) throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
+  async getFile(
+    url: string,
+    localPath: string,
+    headers?: Record<string, string>,
+  ): Promise<void> {
+    const response = await fetch(`${this.baseUrl}${url}`, {
+      headers: { ...this.headers, ...headers },
+    });
+    if (!response.ok)
+      throw new Error(
+        `Failed to download file: ${response.status} ${response.statusText}`,
+      );
     await Bun.write(localPath, response);
   }
-  async post<T>(url: string, data: unknown, { headers }: { headers?: Record<string, string> } = {}): Promise<T> {
+  async post<T>(
+    url: string,
+    data: unknown,
+    { headers }: { headers?: Record<string, string> } = {},
+  ): Promise<T> {
     const isFormData = data instanceof FormData;
     const response = await fetch(`${this.baseUrl}${url}`, {
       method: "POST",
@@ -62,7 +83,10 @@ export class CloudApi {
     const formData = new FormData();
     formData.append("devProjectId", devProjectId);
     formData.append("file", file);
-    const data = await this.#api.post<boolean>(`/uploadEnv/${devProjectId}`, formData);
+    const data = await this.#api.post<boolean>(
+      `/uploadEnv/${devProjectId}`,
+      formData,
+    );
     return data;
   }
   async downloadEnv(devProjectId: string, localPath: string): Promise<void> {
@@ -71,10 +95,13 @@ export class CloudApi {
   async getRemoteAuthToken(remoteId: string): Promise<AccessToken | null> {
     try {
       if (this.#accessToken) {
-        if (GlobalConfig.needRefreshToken(this.#accessToken)) return await this.refreshAuthToken();
+        if (GlobalConfig.needRefreshToken(this.#accessToken))
+          return await this.refreshAuthToken();
         else return await this.refreshAuthToken();
       }
-      const accessToken = await this.#api.get<AccessTokenDto>(`/getRemoteAuthToken/${remoteId}`);
+      const accessToken = await this.#api.get<AccessTokenDto>(
+        `/getRemoteAuthToken/${remoteId}`,
+      );
       this.#accessToken = GlobalConfig.toAccessToken(accessToken);
       this.#api.setHeaders({
         Authorization: `Bearer ${this.#accessToken.jwt}`,
@@ -85,16 +112,21 @@ export class CloudApi {
     }
   }
   async refreshAuthToken(): Promise<AccessToken> {
-    const response = await this.#api.post<AccessTokenDto>(`/refreshRemoteAuthToken`, {
-      refreshToken: this.#accessToken?.refreshToken,
-    });
+    const response = await this.#api.post<AccessTokenDto>(
+      `/refreshRemoteAuthToken`,
+      {
+        refreshToken: this.#accessToken?.refreshToken,
+      },
+    );
     this.#accessToken = GlobalConfig.toAccessToken(response);
     this.#api.setHeaders({ Authorization: `Bearer ${this.#accessToken.jwt}` });
     return this.#accessToken;
   }
   async getRemoteSelf(): Promise<{ id: string; nickname: string } | null> {
     try {
-      const data = await this.#api.get<{ id: string; nickname: string }>(`/getRemoteSelf`);
+      const data = await this.#api.get<{ id: string; nickname: string }>(
+        `/getRemoteSelf`,
+      );
       return data;
     } catch {
       return null;
