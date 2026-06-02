@@ -130,11 +130,15 @@ describe("PackageRunner", () => {
       ].join("\n"),
     );
     await writeText(`${root}/pkgs/@sample/tool/index.ts`, 'import "lodash";\nexport const value = 1;\n');
+    await writeText(`${root}/pkgs/@sample/tool/README.md`, "# Tool\n");
+    await writeText(`${root}/pkgs/@sample/tool/README.ko.md`, "# Tool KO\n");
     const runner = new PackageRunner();
 
     await runner.buildPackage(pkg);
 
     expect(await Bun.file(`${root}/dist/pkgs/@sample/tool/custom-build.txt`).text()).toBe("ok");
+    expect(await Bun.file(`${root}/dist/pkgs/@sample/tool/README.md`).text()).toBe("# Tool\n");
+    expect(await Bun.file(`${root}/dist/pkgs/@sample/tool/README.ko.md`).text()).toBe("# Tool KO\n");
     const sourcePackageJson = (await Bun.file(`${root}/pkgs/@sample/tool/package.json`).json()) as {
       dependencies: Record<string, string>;
       devDependencies: Record<string, string>;

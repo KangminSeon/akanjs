@@ -134,7 +134,7 @@ Complete business modules and application logic:
 1. **Create your workspace**
 
 ```bash
-bun install -g akanjs --latest
+bun install -g @akanjs/cli --latest
 akan create-workspace
 ```
 

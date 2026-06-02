@@ -25,7 +25,7 @@ bunx create-akan-workspace
 또는 CLI를 전역으로 설치할 수 있습니다.
 
 ```bash
-bun install -g akanjs
+bun install -g @akanjs/cli
 akan create-workspace myorg --app myapp
 cd myorg
 akan start myapp --open

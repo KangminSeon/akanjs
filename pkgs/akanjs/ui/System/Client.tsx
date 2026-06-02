@@ -248,6 +248,16 @@ function applyThemePolicy(theme: AkanTheme): void {
   document.documentElement.setAttribute("data-theme", theme);
 }
 
+function buildSearchParams(entries: Iterable<[string, string]>): Record<string, string | string[]> {
+  const params: Record<string, string | string[]> = {};
+  for (const [key, value] of entries) {
+    const current = params[key];
+    if (current === undefined) params[key] = value;
+    else params[key] = Array.isArray(current) ? [...current, value] : [current, value];
+  }
+  return params;
+}
+
 export const ClientInner = () => {
   const uiOperation = st.use.uiOperation();
   return (
@@ -265,6 +275,7 @@ interface ClientSsrBridgeProps {
 }
 export const ClientSsrBridge = ({ lang, prefix = "" }: ClientSsrBridgeProps) => {
   useEffect(() => {
+    const visiblePrefix = getEnv().operationMode === "local" ? prefix : "";
     const navigateRscWithFallback = (
       href: string,
       routeOptions: Parameters<typeof navigateRsc>[1],
@@ -282,14 +293,8 @@ export const ClientSsrBridge = ({ lang, prefix = "" }: ClientSsrBridgeProps) => 
     };
     const syncHref = (href: string) => {
       const url = new URL(href, window.location.origin);
-      const { path } = getPathInfo(`${url.pathname}${url.search}${url.hash}`, lang, prefix);
-      const searchParams = [...url.searchParams.entries()].reduce<Record<string, string | string[]>>(
-        (params, [key, value]) => {
-          params[key] = params[key] ? [...(Array.isArray(params[key]) ? params[key] : [params[key]]), value] : value;
-          return params;
-        },
-        {},
-      );
+      const { path } = getPathInfo(`${url.pathname}${url.search}${url.hash}`, lang, visiblePrefix);
+      const searchParams = buildSearchParams(url.searchParams.entries());
       st.set({ pathname: url.pathname, path, searchParams });
     };
     router.init({
@@ -320,16 +325,11 @@ export const ClientSsrBridge = ({ lang, prefix = "" }: ClientSsrBridgeProps) => 
   }, [lang, prefix]);
 
   useEffect(() => {
+    const visiblePrefix = getEnv().operationMode === "local" ? prefix : "";
     const sync = () => {
       const { pathname, search, hash } = window.location;
-      const { path } = getPathInfo(`${pathname}${search}${hash}`, lang, prefix);
-      const searchParams = [...new URLSearchParams(search).entries()].reduce<Record<string, string | string[]>>(
-        (params, [key, value]) => {
-          params[key] = params[key] ? [...(Array.isArray(params[key]) ? params[key] : [params[key]]), value] : value;
-          return params;
-        },
-        {},
-      );
+      const { path } = getPathInfo(`${pathname}${search}${hash}`, lang, visiblePrefix);
+      const searchParams = buildSearchParams(new URLSearchParams(search).entries());
       st.set({ pathname: window.location.pathname, path, searchParams });
     };
     sync();

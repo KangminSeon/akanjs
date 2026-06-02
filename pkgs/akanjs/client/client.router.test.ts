@@ -55,10 +55,10 @@ beforeAll(() => {
   }));
 });
 
-const installClientWindow = (pathname = "/en/admin/current") => {
+const installClientWindow = (pathname = "/en/admin/current", search = "", hash = "") => {
   Object.defineProperty(globalThis, "window", {
     value: {
-      location: { pathname },
+      location: { pathname, search, hash },
       parent: { postMessage: (message: unknown) => messages.push(message) },
     },
     configurable: true,
@@ -68,7 +68,7 @@ const installClientWindow = (pathname = "/en/admin/current") => {
     configurable: true,
   });
   Object.defineProperty(globalThis, "location", {
-    value: { pathname },
+    value: { pathname, search, hash },
     configurable: true,
   });
 };
@@ -185,6 +185,37 @@ describe("router", () => {
       ["replace", "/en/users?tab=a#bio", undefined],
     ]);
     expect(messages[0]).toMatchObject({ type: "pathChange", path: "/", pathname: "/en/admin" });
+  });
+
+  test("ssr setLang preserves production public paths while switching locale", async () => {
+    envState.side = "client";
+    envState.operationMode = "main";
+    installClientWindow("/ko/docs/intro/fundamentals", "?from=nav", "#section");
+    const calls: unknown[] = [];
+    const { router } = await import("./router");
+
+    router.init({
+      type: "ssr",
+      side: "client",
+      lang: "en",
+      prefix: "akanjs",
+      router: {
+        push: (href, options) => calls.push(["push", href, options]),
+        replace: (href, options) => calls.push(["replace", href, options]),
+        back: (options) => calls.push(["back", options]),
+        refresh: () => calls.push(["refresh"]),
+      },
+    });
+
+    router.setLang("ko");
+
+    expect(calls).toEqual([["replace", "/ko/docs/intro/fundamentals?from=nav#section", undefined]]);
+    expect(messages[0]).toMatchObject({
+      type: "pathChange",
+      path: "/docs/intro/fundamentals",
+      pathname: "/ko/akanjs/docs/intro/fundamentals",
+      hash: "section",
+    });
   });
 
   test("throws initialized guard before init and server redirect/notFound errors", async () => {

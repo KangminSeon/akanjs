@@ -10,6 +10,7 @@ import { CssImportResolver } from "./cssImportResolver";
 import { HmrChangeClassifier } from "./hmrChangeClassifier";
 import { PagesEntrySourceGenerator } from "./pagesEntrySourceGenerator";
 import { RoutesManifestArtifactSerializer } from "./routesManifestArtifactSerializer";
+import { prepareCssAsset } from "./ssrBaseArtifactBuilder";
 
 const tempRoots: string[] = [];
 
@@ -94,6 +95,32 @@ describe("CsrArtifactBuilder", () => {
 
     expect(stripped).toBe("<head></head>");
     expect(style).toBe("<style data-akan-css=\"active\">\nbody::before{content:'<\\/style>';}\n</style>");
+  });
+});
+
+describe("SsrBaseArtifactBuilder", () => {
+  test("minifies CSS assets only for production builds", async () => {
+    const css = [
+      ".card {",
+      "  color: red;",
+      "  padding: 1rem;",
+      "}",
+      "",
+      "@media (width >= 768px) {",
+      "  .card {",
+      "    color: blue;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+
+    const development = await prepareCssAsset("start", "", css);
+    const production = await prepareCssAsset("build", "", css);
+
+    expect(development).toBe(css);
+    expect(production.length).toBeLessThan(css.length);
+    expect(production).toContain(".card{");
+    expect(production).not.toContain("\n  ");
   });
 });
 
