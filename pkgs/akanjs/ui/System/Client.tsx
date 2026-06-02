@@ -275,6 +275,7 @@ interface ClientSsrBridgeProps {
 }
 export const ClientSsrBridge = ({ lang, prefix = "" }: ClientSsrBridgeProps) => {
   useEffect(() => {
+    const visiblePrefix = getEnv().operationMode === "local" ? prefix : "";
     const navigateRscWithFallback = (
       href: string,
       routeOptions: Parameters<typeof navigateRsc>[1],
@@ -292,7 +293,7 @@ export const ClientSsrBridge = ({ lang, prefix = "" }: ClientSsrBridgeProps) => 
     };
     const syncHref = (href: string) => {
       const url = new URL(href, window.location.origin);
-      const { path } = getPathInfo(`${url.pathname}${url.search}${url.hash}`, lang, prefix);
+      const { path } = getPathInfo(`${url.pathname}${url.search}${url.hash}`, lang, visiblePrefix);
       const searchParams = buildSearchParams(url.searchParams.entries());
       st.set({ pathname: url.pathname, path, searchParams });
     };
@@ -324,9 +325,10 @@ export const ClientSsrBridge = ({ lang, prefix = "" }: ClientSsrBridgeProps) => 
   }, [lang, prefix]);
 
   useEffect(() => {
+    const visiblePrefix = getEnv().operationMode === "local" ? prefix : "";
     const sync = () => {
       const { pathname, search, hash } = window.location;
-      const { path } = getPathInfo(`${pathname}${search}${hash}`, lang, prefix);
+      const { path } = getPathInfo(`${pathname}${search}${hash}`, lang, visiblePrefix);
       const searchParams = buildSearchParams(new URLSearchParams(search).entries());
       st.set({ pathname: window.location.pathname, path, searchParams });
     };
