@@ -31,7 +31,40 @@ interface EditOptions {
   maxTry?: number;
   validate?: string[];
   approve?: boolean;
+  fallbackToPreviousTypescript?: boolean;
 }
+
+export const parseTypescriptFileBlocks = (text: string): FileContent[] => {
+  const fileBlocks: FileContent[] = [];
+  const codeBlockRegex = /```(?:typescript|ts|tsx)\s*\n([\s\S]*?)```/gi;
+  const filePathRegex = /^\s*\/\/\s*File:\s*(.+?)\s*$/im;
+
+  for (const codeBlock of text.matchAll(codeBlockRegex)) {
+    const content = codeBlock[1]?.trim();
+    if (!content) continue;
+
+    const filePath = filePathRegex.exec(content)?.[1]?.trim();
+    if (!filePath) continue;
+
+    fileBlocks.push({
+      filePath,
+      content: content.replace(filePathRegex, "").trim(),
+    });
+  }
+
+  return fileBlocks;
+};
+
+export const preserveTypescriptResponseContent = (
+  previousContent: string,
+  nextContent: string,
+) => {
+  const previousWrites = parseTypescriptFileBlocks(previousContent);
+  const nextWrites = parseTypescriptFileBlocks(nextContent);
+  if (previousWrites.length > 0 && nextWrites.length === 0)
+    return previousContent;
+  return nextContent;
+};
 
 export class AiSession {
   static #cacheDir = "node_modules/.cache/akan/aiSession";
@@ -189,8 +222,7 @@ export class AiSession {
       this.messageHistory.push(humanMessage);
       const stream = await AiSession.#chat.stream(this.messageHistory);
       let reasoningResponse = "",
-        fullResponse = "",
-        tokenIdx = 0;
+        fullResponse = "";
       for await (const chunk of stream) {
         if (loader.isSpinning())
           loader.succeed(`${AiSession.#chat.model} responded`);
@@ -214,13 +246,12 @@ export class AiSession {
           fullResponse += content;
           onChunk(content); // Send individual chunks to callback
         }
-        tokenIdx++;
       }
       fullResponse += "\n";
       onChunk("\n");
       this.messageHistory.push(new AIMessage(fullResponse));
       return { content: fullResponse, messageHistory: this.messageHistory };
-    } catch (error) {
+    } catch {
       loader.fail(`${AiSession.#chat.model} failed to respond`);
       throw new Error("Failed to stream response");
     }
@@ -233,6 +264,7 @@ export class AiSession {
       maxTry = MAX_ASK_TRY,
       validate,
       approve,
+      fallbackToPreviousTypescript,
     }: EditOptions = {},
   ) {
     for (let tryCount = 0; tryCount < maxTry; tryCount++) {
@@ -240,7 +272,19 @@ export class AiSession {
       if (validate?.length && tryCount === 0) {
         const validateQuestion = `Double check if the response meets the requirements and conditions, and follow the instructions. If not, rewrite it.
 ${validate.map((v) => `- ${v}`).join("\n")}`;
-        response = await this.ask(validateQuestion, { onChunk, onReasoning });
+        const validateResponse = await this.ask(validateQuestion, {
+          onChunk,
+          onReasoning,
+        });
+        response = {
+          ...validateResponse,
+          content: fallbackToPreviousTypescript
+            ? preserveTypescriptResponseContent(
+                response.content,
+                validateResponse.content,
+              )
+            : validateResponse.content,
+        };
       }
       const isConfirmed = approve
         ? true
@@ -287,15 +331,35 @@ ${validate.map((v) => `- ${v}`).join("\n")}`;
     executor: Executor,
     options: EditOptions = {},
   ) {
-    const content = await this.edit(question, options);
+    const content = await this.edit(question, {
+      ...options,
+      fallbackToPreviousTypescript: true,
+    });
     const writes = this.#getTypescriptCodes(content);
+    if (!writes.length)
+      throw new Error(
+        "No parseable TypeScript file blocks were found in the AI response. Include `// File: <path>` in each code block.",
+      );
     for (const write of writes)
       await executor.writeFile(write.filePath, write.content);
     return await this.#tryFixTypescripts(writes, executor, options);
   }
-  async #editTypescripts(question: string, options: EditOptions = {}) {
-    const content = await this.edit(question, options);
-    return this.#getTypescriptCodes(content);
+  async #editTypescripts(
+    question: string,
+    options: EditOptions = {},
+    fallbackWrites?: FileContent[],
+  ) {
+    const content = await this.edit(question, {
+      ...options,
+      fallbackToPreviousTypescript: true,
+    });
+    const writes = this.#getTypescriptCodes(content);
+    if (!writes.length && fallbackWrites?.length) return fallbackWrites;
+    if (!writes.length)
+      throw new Error(
+        "No parseable TypeScript file blocks were found in the AI response. Include `// File: <path>` in each code block.",
+      );
+    return writes;
   }
   async #tryFixTypescripts(
     writes: FileContent[],
@@ -309,15 +373,16 @@ ${validate.map((v) => `- ${v}`).join("\n")}`;
       }).start();
       const fileChecks = await Promise.all(
         writes.map(async ({ filePath }) => {
-          const typeCheckResult = executor.typeCheck(filePath);
-          const lintResult = await executor.lint(filePath);
-          const needFix =
-            !!typeCheckResult.fileErrors.length || !!lintResult.errors.length;
+          const lintResult = await executor.lint(filePath, { fix: true });
+          const typeCheckResult = await executor.typeCheckAsync(filePath);
+          const hasTypeErrors = typeCheckResult.fileErrors.length > 0;
+          const hasLintErrors = lintResult.errors.length > 0;
+          const needFix = hasTypeErrors || hasLintErrors;
           return { filePath, typeCheckResult, lintResult, needFix };
         }),
       );
-      const needFix = fileChecks.some((fileCheck) => fileCheck.needFix);
-      if (needFix) {
+      const hasAnyFix = fileChecks.some((fileCheck) => fileCheck.needFix);
+      if (hasAnyFix) {
         loader.fail(
           "Type checking and linting has some errors, try to fix them",
         );
@@ -337,6 +402,7 @@ ${validate.map((v) => `- ${v}`).join("\n")}`;
             validate: undefined,
             approve: true,
           },
+          writes,
         );
         for (const write of writes)
           await executor.writeFile(write.filePath, write.content);
@@ -348,19 +414,7 @@ ${validate.map((v) => `- ${v}`).join("\n")}`;
     throw new Error("Failed to create scalar");
   }
   #getTypescriptCodes(text: string): FileContent[] {
-    const codes = text.match(/```(typescript|tsx)([\s\S]*?)```/g);
-    if (!codes) return [];
-    const result = codes.map((code) => {
-      const content = /```(typescript|tsx)([\s\S]*?)```/.exec(code)?.[2];
-      if (!content) return null;
-      const filePath = /\/\/ File: (.*?)(?:\n|$)/.exec(content)?.[1]?.trim();
-      if (!filePath) return null;
-      const contentWithoutFilepath = content
-        .replace(`// File: ${filePath}\n`, "")
-        .trim();
-      return { filePath, content: contentWithoutFilepath };
-    });
-    return result.filter((code) => code !== null) as FileContent[];
+    return parseTypescriptFileBlocks(text);
   }
   async editMarkdown(request: string, options: EditOptions = {}) {
     const content = await this.edit(request, options);

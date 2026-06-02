@@ -5,11 +5,14 @@ interface Dict {
   model: string;
   sysName: string;
 }
-export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: Dict) {
+export default function getContent(
+  scanInfo: AppInfo | LibInfo | null,
+  dict: Dict,
+) {
   return {
     filename: `${dict.Model}.Unit.tsx`,
     content: `
-import { ModelProps } from "akanjs/client";
+import type { ModelProps } from "akanjs/client";
 import { cnst, usePage } from "@${scanInfo?.type ?? "apps"}/${dict.sysName}/client";
 import { Link } from "akanjs/ui";
 
