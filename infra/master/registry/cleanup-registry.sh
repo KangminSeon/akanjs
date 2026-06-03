@@ -7,6 +7,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../jenkins/credentials.sh"
 #add --insecure to the curl command on line 17 if you use https with self-signed certificates
 
+: "${REGISTRY_URL:=http://localhost:5000}"
+REGISTRY_URL="${REGISTRY_URL%/}"
+
 if [ -z "${REGISTRY_DIR:-}" ]; then
 	echo "REGISTRY_DIR is not set. Refusing to scan the current directory." >&2
 	exit 1

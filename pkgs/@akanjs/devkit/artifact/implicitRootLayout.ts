@@ -15,6 +15,7 @@ async function appHasStModule(appCwdPath: string): Promise<boolean> {
 }
 
 const IMPLICIT_LAYOUT_DIR = path.join(".akan", "generated", "root-layouts");
+const IMPLICIT_DICT_DIR = path.join(".akan", "generated", "dict");
 
 interface RootBoundary {
   sourceKey: string | null;
@@ -37,6 +38,10 @@ function implicitRootLayoutKey(segments: string[]): string {
 function implicitRootLayoutAbsPath(appCwdPath: string, segments: string[]): string {
   const filename = segments.length ? `${segments.join("__")}__root_layout.tsx` : "__root_layout.tsx";
   return path.join(path.resolve(appCwdPath), IMPLICIT_LAYOUT_DIR, filename);
+}
+
+function implicitDictionaryMacroAbsPath(appCwdPath: string): string {
+  return path.join(path.resolve(appCwdPath), IMPLICIT_DICT_DIR, "useDict.ts");
 }
 
 function isRootBoundarySegments(segments: string[], basePaths: Iterable<string>): boolean {
@@ -99,6 +104,19 @@ async function assertEnvClientConvention(appCwdPath: string, appName: string) {
   }
 }
 
+async function writeGeneratedDictionaryMacroFile(appCwdPath: string, appName: string): Promise<string> {
+  const absPath = implicitDictionaryMacroAbsPath(appCwdPath);
+  await mkdir(path.dirname(absPath), { recursive: true });
+  await Bun.write(
+    absPath,
+    `import { getAllDictionary } from "@apps/${appName}/lib/dict" with { type: "macro" };
+
+export const allDictionary = getAllDictionary();
+`,
+  );
+  return absPath;
+}
+
 async function writeGeneratedRootLayoutFile(opts: {
   appCwdPath: string;
   appName: string;
@@ -108,8 +126,15 @@ async function writeGeneratedRootLayoutFile(opts: {
   includeSystemProvider: boolean;
 }): Promise<string> {
   await assertEnvClientConvention(opts.appCwdPath, opts.appName);
+  const dictMacroAbsPath = opts.includeSystemProvider
+    ? await writeGeneratedDictionaryMacroFile(opts.appCwdPath, opts.appName)
+    : null;
   const absPath = implicitRootLayoutAbsPath(opts.appCwdPath, opts.boundary.segments);
   await mkdir(path.dirname(absPath), { recursive: true });
+  const dictMacroRel = dictMacroAbsPath
+    ? path.relative(path.dirname(absPath), dictMacroAbsPath).split(path.sep).join("/")
+    : null;
+  const dictMacroSpecifier = dictMacroRel ? (dictMacroRel.startsWith(".") ? dictMacroRel : `./${dictMacroRel}`) : null;
   const sourceRel = opts.boundary.sourceAbsPath
     ? path.relative(path.dirname(absPath), opts.boundary.sourceAbsPath).split(path.sep).join("/")
     : null;
@@ -135,8 +160,65 @@ async function writeGeneratedRootLayoutFile(opts: {
     ? `import UserLayout, * as userLayout from ${JSON.stringify(sourceSpecifier)};\n`
     : "const UserLayout = ({ children }) => children;\nconst userLayout = {};\n";
   const source = opts.includeSystemProvider
-    ? `import type { LayoutProps, PageProps } from "akanjs/client";\nimport { loadFonts } from "akanjs/client";\nimport { System } from "akanjs/ui";\nimport { env } from "@apps/${opts.appName}/env/env.client";\n${clientImport}${inheritedImport}${userImport}\nconst userFonts = userLayout.fonts ?? inheritedLayout.fonts ?? [];\nconst defaultFonts = userFonts.filter((font) => font.default);\nif (defaultFonts.length > 1) throw new Error("[route-convention] only one default font is allowed per root layout");\nconst defaultFont = defaultFonts[0];\nconst defaultFontClassName = defaultFont ? (defaultFont.className ?? \`font-\${defaultFont.name}\`) : undefined;\n\nexport async function generateHead(props: PageProps) {\n  if (userLayout.generateHead) return userLayout.generateHead(props);\n  if (userLayout.head !== undefined) return userLayout.head;\n  if (inheritedLayout.generateHead) return inheritedLayout.generateHead(props);\n  return inheritedLayout.head;\n}\n\nexport const NotFound = userLayout.NotFound ?? inheritedLayout.NotFound;\nexport const Error = userLayout.Error ?? inheritedLayout.Error;\n\nexport default function GeneratedLayout({ children, params, searchParams }: LayoutProps) {\n  return (\n    <System.Provider\n      of={GeneratedLayout as never}\n      appName=${JSON.stringify(opts.appName)}\n      ${prefix ? `prefix=${JSON.stringify(prefix)}\n      ` : ""}params={params}\n      manifest={userLayout.manifest ?? inheritedLayout.manifest}\n      env={env}\n      theme={userLayout.theme ?? inheritedLayout.theme}\n      fonts={loadFonts(userFonts)}\n      className={defaultFontClassName}\n      gaTrackingId={userLayout.gaTrackingId ?? inheritedLayout.gaTrackingId}\n      layoutStyle={userLayout.layoutStyle ?? inheritedLayout.layoutStyle}\n      reconnect={userLayout.reconnect ?? inheritedLayout.reconnect ?? false}\n    >\n      <UserLayout params={params} searchParams={searchParams}>{children}</UserLayout>\n    </System.Provider>\n  );\n}\n`
-    : `import type { LayoutProps, PageProps } from "akanjs/client";\n${inheritedImport}${userImport}\nexport async function generateHead(props: PageProps) {\n  if (userLayout.generateHead) return userLayout.generateHead(props);\n  if (userLayout.head !== undefined) return userLayout.head;\n  if (inheritedLayout.generateHead) return inheritedLayout.generateHead(props);\n  return inheritedLayout.head;\n}\n\nexport const NotFound = userLayout.NotFound ?? inheritedLayout.NotFound;\nexport const Error = userLayout.Error ?? inheritedLayout.Error;\n\nexport default function GeneratedLayout({ children, params, searchParams }: LayoutProps) {\n  return <UserLayout params={params} searchParams={searchParams}>{children}</UserLayout>;\n}\n`;
+    ? `import type { LayoutProps, PageProps } from "akanjs/client";
+import { loadFonts } from "akanjs/client";
+import { System } from "akanjs/ui";
+import { env } from "@apps/${opts.appName}/env/env.client";
+import { allDictionary } from ${JSON.stringify(dictMacroSpecifier)};
+${clientImport}${inheritedImport}${userImport}
+const userFonts = userLayout.fonts ?? inheritedLayout.fonts ?? [];
+const defaultFonts = userFonts.filter((font) => font.default);
+if (defaultFonts.length > 1) throw new Error("[route-convention] only one default font is allowed per root layout");
+const defaultFont = defaultFonts[0];
+const defaultFontClassName = defaultFont ? (defaultFont.className ?? \`font-\${defaultFont.name}\`) : undefined;
+
+export async function generateHead(props: PageProps) {
+  if (userLayout.generateHead) return userLayout.generateHead(props);
+  if (userLayout.head !== undefined) return userLayout.head;
+  if (inheritedLayout.generateHead) return inheritedLayout.generateHead(props);
+  return inheritedLayout.head;
+}
+
+export const NotFound = userLayout.NotFound ?? inheritedLayout.NotFound;
+export const Error = userLayout.Error ?? inheritedLayout.Error;
+
+export default function GeneratedLayout({ children, params, searchParams }: LayoutProps) {
+  return (
+    <System.Provider
+      of={GeneratedLayout as never}
+      appName=${JSON.stringify(opts.appName)}
+      ${prefix ? `prefix=${JSON.stringify(prefix)}\n      ` : ""}params={params}
+      manifest={userLayout.manifest ?? inheritedLayout.manifest}
+      env={env}
+      theme={userLayout.theme ?? inheritedLayout.theme}
+      fonts={loadFonts(userFonts)}
+      className={defaultFontClassName}
+      gaTrackingId={userLayout.gaTrackingId ?? inheritedLayout.gaTrackingId}
+      layoutStyle={userLayout.layoutStyle ?? inheritedLayout.layoutStyle}
+      reconnect={userLayout.reconnect ?? inheritedLayout.reconnect ?? false}
+      dictionary={allDictionary[params.lang]}
+    >
+      <UserLayout params={params} searchParams={searchParams}>{children}</UserLayout>
+    </System.Provider>
+  );
+}
+`
+    : `import type { LayoutProps, PageProps } from "akanjs/client";
+${inheritedImport}${userImport}
+export async function generateHead(props: PageProps) {
+  if (userLayout.generateHead) return userLayout.generateHead(props);
+  if (userLayout.head !== undefined) return userLayout.head;
+  if (inheritedLayout.generateHead) return inheritedLayout.generateHead(props);
+  return inheritedLayout.head;
+}
+
+export const NotFound = userLayout.NotFound ?? inheritedLayout.NotFound;
+export const Error = userLayout.Error ?? inheritedLayout.Error;
+
+export default function GeneratedLayout({ children, params, searchParams }: LayoutProps) {
+  return <UserLayout params={params} searchParams={searchParams}>{children}</UserLayout>;
+}
+`;
   await Bun.write(absPath, source);
   return absPath;
 }

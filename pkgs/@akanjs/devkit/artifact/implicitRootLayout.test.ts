@@ -73,5 +73,15 @@ describe("resolveSsrPageEntries", () => {
     const generatedSource = await Bun.file(groupedRoot?.moduleAbsPath ?? "").text();
     expect(generatedSource).toContain("<System.Provider");
     expect(generatedSource).toContain("theme={userLayout.theme ?? inheritedLayout.theme}");
+    expect(generatedSource).toContain('import { allDictionary } from "../dict/useDict.ts";');
+    expect(generatedSource).toContain("dictionary={allDictionary[params.lang]}");
+    expect(generatedSource).not.toContain("getAllDictionary");
+    expect(generatedSource).not.toContain("// export default function GeneratedLayout");
+
+    const generatedDictMacro = await Bun.file(path.join(appRoot, ".akan", "generated", "dict", "useDict.ts")).text();
+    expect(generatedDictMacro).toContain(
+      'import { getAllDictionary } from "@apps/demo/lib/dict" with { type: "macro" };',
+    );
+    expect(generatedDictMacro).toContain("export const allDictionary = getAllDictionary();");
   });
 });
