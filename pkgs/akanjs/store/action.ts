@@ -1,5 +1,14 @@
 import { DataList, type Dayjs, FIELD_META, type GetStateObject, type SLICE_META } from "akanjs/base";
-import { capitalize, deepObjectify, type FetchPolicy, isQueryEqual, Logger, lowerlize, pathSet } from "akanjs/common";
+import {
+  capitalize,
+  deepObjectify,
+  type FetchPolicy,
+  isQueryEqual,
+  Logger,
+  lowerlize,
+  pathSet,
+  resolveFileUploadCapability,
+} from "akanjs/common";
 import {
   type BaseInsight,
   type BaseObject,
@@ -277,6 +286,7 @@ export const makeFormSetter = (refName: string, fetch: FetchProxy<any>) => {
   type Light = BaseObject;
   const [fieldName, className] = [refName, capitalize(refName)];
   const modelRef = ConstantRegistry.getDatabase(refName).full;
+  const fileUploadRefName = resolveFileUploadCapability(fetch.serializedSignal)?.refName;
 
   const names = {
     model: fieldName,
@@ -356,7 +366,7 @@ export const makeFormSetter = (refName: string, fetch: FetchProxy<any>) => {
             },
           }
         : {}),
-      ...(field.isClass && ConstantRegistry.getRefName(field.modelRef) === "file"
+      ...(field.isClass && !!fileUploadRefName && ConstantRegistry.getRefName(field.modelRef) === fileUploadRefName
         ? {
             [namesOfField.uploadFieldOnModel]: async function (this: SetGet, fileList: FileList, index?: number) {
               const form = (this.get() as { [key: string]: any })[names.modelForm] as { [key: string]: any };
@@ -383,7 +393,9 @@ export const makeFormSetter = (refName: string, fetch: FetchProxy<any>) => {
                 const intervalKey = setInterval(() => {
                   void (async () => {
                     const currentFile = await (
-                      (fetch as { [key: string]: any }).file as (id: string) => Promise<ProtoFile>
+                      (fetch as { [key: string]: any })[fileUploadRefName as string] as (
+                        id: string,
+                      ) => Promise<ProtoFile>
                     )(file.id);
                     if (field.isArray)
                       this.set((state: { [key: string]: { [key: string]: ProtoFile[] } }) => {
