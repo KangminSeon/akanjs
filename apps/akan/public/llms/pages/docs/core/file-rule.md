@@ -43,6 +43,10 @@ These files describe the data, server logic, API surface, and state around a bus
 
 For example, an order feature may keep order status values in order.constant.ts, saved order fields in order.document.ts, payment completion logic in order.service.ts, and page-callable actions in order.signal.ts.
 
+The abstract file is not only for LLMs. It keeps domain knowledge beside the code, so people and agents can understand business invariants before changing implementation files.
+
+Business intent, domain rules, workflows, and agent notes kept next to the module code. Example: order cancellation rules or status transition policy.
+
 Constants, status values, default options, and shared model types. Example: order status such as pending, paid, shipped.
 
 Labels, field names, and text keys used by the model. Example: product name, price, stock labels.
@@ -111,11 +115,11 @@ Not every folder type uses every file type. Database modules can have the full s
 
 Choose the file set by the business role of the folder. product is a thing you store, so it can have document and store files. _payment is something you do, so it usually focuses on service and signal files. money is a reusable value shape, so it stays small and definition-oriented.
 
-Can use constant, dictionary, document, service, signal, store, Template, Unit, Util, View, and Zone.
+Can use abstract, constant, dictionary, document, service, signal, store, Template, Unit, Util, View, and Zone.
 
-Can use dictionary, service, signal, store, Template, Unit, Util, View, and Zone.
+Can use abstract, dictionary, service, signal, store, Template, Unit, Util, View, and Zone. The abstract filename drops the folder underscore, such as payment.abstract.md in lib/_payment/.
 
-Can use constant, dictionary, document, Template, Unit, Util, View, and Zone.
+Can use abstract, constant, dictionary, document, Template, Unit, Util, View, and Zone.
 
 Codegen And Choices
 
@@ -149,6 +153,7 @@ Is it a large screen area?
 
 ```bash
 lib/product/
+├── product.abstract.md
 ├── product.constant.ts
 ├── product.dictionary.ts
 ├── product.document.ts
@@ -175,6 +180,7 @@ BizCard.Zone.tsx      # large screen areas such as admin/list/detail
 ### Code
 
 ```bash
+product.abstract.md
 product.constant.ts
 product.dictionary.ts
 product.document.ts

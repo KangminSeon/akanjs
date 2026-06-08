@@ -31,6 +31,8 @@ Generate CRUD page routes for an existing module inside an app.
 
 Configure optional cloud authentication, LLM settings, project questions, and updates.
 
+Expose workspace context, module abstracts, diagnostics, guideline instructions, agent rules, and read-only MCP tools.
+
 CLI Commands
 
 The Akan CLI manages the whole workspace lifecycle: workspace creation, app development, generated code, libraries, packages, modules, scalars, pages, mobile builds, local databases, and optional cloud helpers.

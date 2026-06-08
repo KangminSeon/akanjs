@@ -10,6 +10,7 @@
 
 - Docker (#overview)
 - Minimal Compose (#compose)
+- Open Console (#console)
 - Important Env (#env)
 - Scale With AKAN_REPLICA (#replica)
 - Tips (#tips)
@@ -29,6 +30,14 @@ Mount logs so troubleshooting does not depend on container lifetime.
 Minimal Compose
 
 This is a simplified example for one app. Replace `myapp` and the image name with your app.
+
+Open Console
+
+`akan build` embeds `console.js` next to `main.js`, so you can open an operator console without creating files inside the container.
+
+Set `AKAN_CONSOLE=1` only on the exec command for production-like environments.
+
+Docker exec
 
 Important Env
 
@@ -79,6 +88,12 @@ services:
     volumes:
       - ./sqlite:/workspace/sqlite
       - ./logs:/workspace/logs
+```
+
+### Code
+
+```bash
+docker exec -it myapp sh -lc 'AKAN_CONSOLE=1 bun console.js'
 ```
 
 ### Code

@@ -114,7 +114,7 @@ export default function Page() {
     },
     {
       title: "Agent Tooling",
-      href: "/references/cli/overview",
+      href: "/references/cli/context",
       commands: [
         "context --format json",
         "doctor --format json",

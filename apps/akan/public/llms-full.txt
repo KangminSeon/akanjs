@@ -628,6 +628,10 @@ These files describe the data, server logic, API surface, and state around a bus
 
 For example, an order feature may keep order status values in order.constant.ts, saved order fields in order.document.ts, payment completion logic in order.service.ts, and page-callable actions in order.signal.ts.
 
+The abstract file is not only for LLMs. It keeps domain knowledge beside the code, so people and agents can understand business invariants before changing implementation files.
+
+Business intent, domain rules, workflows, and agent notes kept next to the module code. Example: order cancellation rules or status transition policy.
+
 Constants, status values, default options, and shared model types. Example: order status such as pending, paid, shipped.
 
 Labels, field names, and text keys used by the model. Example: product name, price, stock labels.
@@ -657,10 +661,6 @@ Use it for UI-level actions or helper components, such as remove buttons, edit m
 Use it for larger areas, such as admin screens, list/detail zones, tab content, or dashboard sections.
 
 Naming Rule
-
-Akan file names use two patterns. Business core files use the model name in lower camel case. UI files use the model name in PascalCase.
-
-This makes a module easy to scan with your eyes. When you open lib/product/, every product.* file is business logic and every Product.* file is UI. You can immediately tell where to add a new query, screen component, or server action.
 
 ## Folder Rule
 
@@ -1094,13 +1094,13 @@ Domain modules
 
 Icecream order domain module
 
+Business intent
+
 Types and schemas
 
 Translations
 
 Document
-
-Business logic
 
 ## Quick Start
 
@@ -1413,6 +1413,23 @@ Shared login form type used by auth stores and bridge UI. It describes target au
 
 Usage
 
+## Agent
+
+Source: /references/cli/agent
+Mirror: /llms/pages/references/cli/agent.md
+Priority: P0
+
+Headings:
+- Agent CLI
+
+Agent
+
+Agent CLI
+
+Agent commands install project guidance files for coding assistants. They are intentionally separate from the MCP server: rules are persistent project instructions, while MCP provides live read-only context.
+
+Use this after creating a workspace or when you want Cursor, Claude Code, Codex-style agents, and similar tools to follow Akan conventions consistently.
+
 ## Application
 
 Source: /references/cli/application
@@ -1446,6 +1463,40 @@ Cloud CLI
 Cloud commands configure optional Akan Cloud helpers: authentication, LLM settings, project questions, and framework updates.
 
 Internal deployment commands marked `devOnly: true` are intentionally not documented here.
+
+## Context
+
+Source: /references/cli/context
+Mirror: /llms/pages/references/cli/context.md
+Priority: P0
+
+Headings:
+- Context CLI
+
+Context
+
+Context CLI
+
+Context commands expose Akan workspace structure in forms that people, agents, CI jobs, and MCP clients can consume.
+
+Use `context` to understand the workspace, `doctor` to validate conventions, and `mcp` when an MCP-aware client should query the same information over stdio.
+
+## Guideline
+
+Source: /references/cli/guideline
+Mirror: /llms/pages/references/cli/guideline.md
+Priority: P0
+
+Headings:
+- Guideline CLI
+
+Guideline
+
+Guideline CLI
+
+Guideline commands expose Akan's bundled agent instructions without invoking an LLM or changing files.
+
+Use them when you want an external agent to load the most specific instruction for a module file, scalar file, UI pattern, or global framework rule.
 
 ## Library
 
@@ -1508,6 +1559,8 @@ Create reusable value types that are not database-backed document models.
 Generate CRUD page routes for an existing module inside an app.
 
 Configure optional cloud authentication, LLM settings, project questions, and updates.
+
+Expose workspace context, module abstracts, diagnostics, guideline instructions, agent rules, and read-only MCP tools.
 
 CLI Commands
 
@@ -1827,6 +1880,30 @@ Reusable browser hooks for notifications, messaging, viewport state, permission 
 
 External web wrappers
 
+## model.abstract.md
+
+Source: /conventions/module/abstract
+Mirror: /llms/pages/conventions/module/abstract.md
+Priority: P1
+
+Headings:
+- model.abstract.md
+- Update Rule
+
+model.abstract.md
+
+A module abstract is the business-intent file for a domain module. It explains why the module exists, what rules must stay true, which workflows matter, and what agents should know before editing implementation files.
+
+Do not duplicate the constant or dictionary file in prose. Use this file for information that code alone does not make obvious.
+
+Update Rule
+
+Update it when business invariants, workflows, public behavior, permissions, or state transitions change.
+
+Do not update it for formatting-only, import-only, or style-only changes.
+
+Read it before changing constant, document, service, signal, store, or UI files in the same module.
+
 ## model.constant.ts
 
 Source: /conventions/module/constant
@@ -1965,6 +2042,8 @@ Headings:
 
 Overview
 
+Describes business intent, domain rules, workflows, data meaning, related modules, and agent notes that should be read before implementation changes.
+
 Defines the business data shape: fields, enums, model layers, helpers, hidden/secret fields, and resolved fields.
 
 Defines user-facing language for fields, insights, queries, slices, endpoints, errors, and UI text.
@@ -1984,8 +2063,6 @@ Renders reusable light-model display pieces such as cards, rows, avatars, column
 Renders full-model detail UI for detail pages, view modals, and sections that need complete model data.
 
 Packages small client helper UI such as action buttons, toolboxes, dialogs, query panels, and navigation helpers.
-
-Composes page sections with Load.Units, Load.View, Unit/View display, Util controls, and section-level UI state.
 
 ## model.service.ts
 
@@ -2305,6 +2382,19 @@ Render empty states, often with Model.NewWrapper or a link-style call to action.
 
 View Zone With Load.View
 
+## scalar.abstract.md
+
+Source: /conventions/scalar/abstract
+Mirror: /llms/pages/conventions/scalar/abstract.md
+Priority: P1
+
+Headings:
+- scalar.abstract.md
+
+scalar.abstract.md
+
+A scalar abstract explains the meaning and reuse rules of a small embedded value object. Use it when validation intent, normalization behavior, or usage boundaries are not obvious from the scalar constant file.
+
 ## scalar.constant.ts
 
 Source: /conventions/scalar/constant
@@ -2447,11 +2537,11 @@ Good module model examples: Product, Order, User, Post, Ticket.
 
 Scalar Files
 
-Scalar files live under `lib/__scalar/<scalarName>`. Start with constant, dictionary, and document files. Add Template or Unit files only when the scalar needs reusable UI.
+Scalar files live under `lib/__scalar/<scalarName>`. Start with abstract, constant, dictionary, and document files. Add Template or Unit files only when the scalar needs reusable UI.
+
+explains value meaning, validation intent, reuse rules, and agent notes.
 
 defines the scalar fields and enum values.
-
-adds labels and descriptions for the scalar fields.
 
 ## Scalar.Template.tsx
 
@@ -2527,6 +2617,21 @@ Small Variants
 
 Add variants only when the same scalar needs different display sizes. Keep each variant focused on rendering the scalar value.
 
+## service.abstract.md
+
+Source: /conventions/service/abstract
+Mirror: /llms/pages/conventions/service/abstract.md
+Priority: P1
+
+Headings:
+- service.abstract.md
+
+service.abstract.md
+
+A service abstract explains the intent and boundaries of a workflow or integration module. Service folders keep the underscore, but the abstract filename drops it: `lib/_payment/payment.abstract.md`.
+
+Use it for rules that should guide service, signal, store, and UI changes, especially when a workflow touches external systems or background work.
+
 ## service.dictionary.ts
 
 Source: /conventions/service/dictionary
@@ -2584,6 +2689,8 @@ Search feature module with service methods, endpoints, client store, and admin Z
 
 Shared file-access service that reads blob data through a typed endpoint.
 
+Describes the service workflow intent, domain rules, integration boundaries, and agent notes.
+
 Implements the workflow itself and injects runtime values or other services.
 
 Exposes the workflow through endpoint, internal task, cron, or custom route signals.
@@ -2597,8 +2704,6 @@ Packages small client controls for the service feature when they are reusable.
 Composes a full service feature section for admin pages or app pages.
 
 Service Module Overview
-
-A service module is a feature, workflow, or integration folder. It is useful when the code does not start from a document model, but still needs server logic, typed APIs, client state, and sometimes UI.
 
 ## service.service.ts
 
@@ -3325,6 +3430,44 @@ REST API signal view/test surface.
 
 Realtime signal surfaces.
 
+## Console
+
+Source: /cheatsheet/dev/console
+Mirror: /llms/pages/cheatsheet/dev/console.md
+Priority: P2
+
+Headings:
+- Server Console
+- Local Console
+- Container Console
+- Lifecycle
+- Globals
+- Safety
+
+Console
+
+Server Console
+
+Use the Akan server console for interactive inspection and small operator commands against an initialized app runtime.
+
+`akan console` is the local development entry.
+
+`console.js` is generated by `akan build` and is embedded next to `main.js` in the production dist files.
+
+Do not create console files manually inside a running container or pod.
+
+Local Console
+
+Open a local console when you want to inspect services, call small methods, or try a quick query without writing a repeatable script file.
+
+Run locally
+
+Container Console
+
+In Docker or Kubernetes, execute the generated `console.js` that already exists in the built image.
+
+Set `AKAN_CONSOLE=1` on the exec command itself for production-like environments. Avoid keeping it permanently in deployment env.
+
 ## Constant Schema Docs
 
 Source: /cheatsheet/dev/constants
@@ -3359,6 +3502,7 @@ Priority: P2
 Headings:
 - Docker
 - Minimal Compose
+- Open Console
 - Important Env
 - Scale With AKAN_REPLICA
 - Tips
@@ -3377,15 +3521,15 @@ Minimal Compose
 
 This is a simplified example for one app. Replace `myapp` and the image name with your app.
 
+Open Console
+
+`akan build` embeds `console.js` next to `main.js`, so you can open an operator console without creating files inside the container.
+
+Set `AKAN_CONSOLE=1` only on the exec command for production-like environments.
+
+Docker exec
+
 Important Env
-
-`AKAN_PUBLIC_OPERATION_MODE=edge`: tells the app it is running as an edge deployment.
-
-`AKAN_SQLITE_DIR`: keeps sqlite files in a mounted folder.
-
-`AKAN_LOG_DIR`: keeps runtime logs outside the container filesystem.
-
-`AKAN_REPLICA`: controls child process roles for scaling.
 
 ## Documentation
 
@@ -3433,6 +3577,7 @@ Priority: P2
 Headings:
 - Kubernetes
 - Architecture
+- Open Console
 - Values
 - Scale
 - Tips
@@ -3455,11 +3600,11 @@ Think of the chart as four connected pieces. Users enter through Ingress, the Se
 
 Mental model
 
-Values
+Open Console
 
-Use values to tune each environment. Debug can stay small, while main usually gets more CPU, memory, storage, and replicas.
+Use `kubectl exec` to run the generated `console.js` already embedded in the built app image.
 
-Scale
+The console starts a separate no-listen server process in the same pod; it does not attach to the running `main.js` memory.
 
 ## PWA
 
@@ -3525,6 +3670,8 @@ You can reuse services, signals, and adaptors that the app already wires togethe
 
 Keep each script small and easy to delete after the job is done.
 
+Use `akan console` instead when the job is interactive inspection or a small operator command.
+
 Command
 
 Put scripts under `apps/myapp/script`. The filename becomes the command target.
@@ -3534,8 +3681,6 @@ Run a script
 Server Lifecycle
 
 Start the server, do the job, and always stop it in `finally`. This makes database connections, timers, and adaptors clean up correctly.
-
-Use Services
 
 ## Testing
 
@@ -4301,6 +4446,7 @@ Chat Flow
 
 ## Additional P2 Mirrors
 
+- Console: /llms/pages/cheatsheet/dev/console.md
 - Constant Schema Docs: /llms/pages/cheatsheet/dev/constants.md
 - Docker: /llms/pages/cheatsheet/dev/docker.md
 - Documentation: /llms/pages/cheatsheet/dev/docs.md

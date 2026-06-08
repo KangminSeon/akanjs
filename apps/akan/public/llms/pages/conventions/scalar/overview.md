@@ -33,7 +33,9 @@ Good module model examples: Product, Order, User, Post, Ticket.
 
 Scalar Files
 
-Scalar files live under `lib/__scalar/<scalarName>`. Start with constant, dictionary, and document files. Add Template or Unit files only when the scalar needs reusable UI.
+Scalar files live under `lib/__scalar/<scalarName>`. Start with abstract, constant, dictionary, and document files. Add Template or Unit files only when the scalar needs reusable UI.
+
+explains value meaning, validation intent, reuse rules, and agent notes.
 
 defines the scalar fields and enum values.
 
@@ -69,6 +71,7 @@ export class ProductInput extends via((field) => ({
 lib/
 └── __scalar/
     └── price/
+        ├── price.abstract.md
         ├── price.constant.ts
         ├── price.dictionary.ts
         ├── price.document.ts

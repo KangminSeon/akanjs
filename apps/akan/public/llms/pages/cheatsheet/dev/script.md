@@ -29,6 +29,8 @@ You can reuse services, signals, and adaptors that the app already wires togethe
 
 Keep each script small and easy to delete after the job is done.
 
+Use `akan console` instead when the job is interactive inspection or a small operator command.
+
 Command
 
 Put scripts under `apps/myapp/script`. The filename becomes the command target.

@@ -97,7 +97,7 @@ If base paths are configured, putting a page directly under page/ is invalid. Mo
 
 Root Layout Exports
 
-The root _layout.tsx can configure app-wide behavior. It is still a layout, but it may also export extra values for fonts, manifest, theme, analytics, and mobile-style rendering.
+The root _layout.tsx can configure app-wide behavior. It is still a layout, but it may also export extra values for fonts, manifest, theme, realtime connection, analytics, and mobile-style rendering.
 
 Registers app-wide fonts so pages can use them consistently.
 
@@ -106,6 +106,8 @@ Defines the web app manifest used for installable/PWA-like behavior.
 Chooses the default theme policy, such as dark, light, system, or css.
 
 Controls whether the client tries to reconnect to realtime runtime channels.
+
+Controls whether the browser connects the client WebSocket runtime after load. The default is true. If false, message/pubsub calls warn in the browser console until fetch.instance.connect() is called.
 
 Switches the outer page container style. Use mobile for app-like mobile shells.
 
@@ -239,6 +241,7 @@ export const manifest: WebAppManifest = {
 
 export const theme = "dark";
 export const reconnect = true;
+export const wsConnect = true;
 export const layoutStyle = "web";
 export const gaTrackingId = "G-XXXXXXXXXX";
 

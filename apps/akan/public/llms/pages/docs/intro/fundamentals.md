@@ -187,9 +187,11 @@ Dynamic segment
 
 Domain module file convention
 
-A domain module represents one business concept: user management, orders, payments, projects, and so on. Akan keeps the data shape, service behavior, API contract, state, and UI for that concept aligned in one predictable folder.
+A domain module represents one business concept: user management, orders, payments, projects, and so on. Akan keeps the business abstract, data shape, service behavior, API contract, state, and UI for that concept aligned in one predictable folder.
 
 Feature module
+
+Business intent
 
 Types and schemas
 
@@ -213,7 +215,7 @@ Detail view UI
 
 Integration UI
 
-A domain acts like a living organism. From the schema definition in constant.ts to the integration component in Zone.tsx, related changes stay close together. This reduces frontend-backend drift, business logic regressions, and the number of places an agent must inspect before making a change.
+A domain acts like a living organism. Start with abstract.md for business intent, then keep the schema definition in constant.ts, behavior in service.ts, public contract in signal.ts, and integration UI in Zone.tsx close together. This reduces frontend-backend drift, business logic regressions, and the number of places an agent must inspect before making a change.
 
 Who should use?
 
@@ -296,6 +298,7 @@ Programming is to create business value by efficiently connecting our lives and 
     └── {appA,libA}/      # ${l.trans({ en: "Individual application or library", ko: "개별 애플리케이션 또는 라이브러리" })}
         └── lib/          # ${l.trans({ en: "Domain modules", ko: "도메인 모듈" })}
             └── moduleA/  # ${l.trans({ en: "Feature module", ko: "기능 모듈" })}
+                ├── moduleA.abstract.md   # ${l.trans({ en: "Business intent", ko: "비즈니스 의도" })}
                 ├── moduleA.constant.ts   # ${l.trans({ en: "Types and schemas", ko: "타입과 스키마" })}
                 ├── moduleA.dictionary.ts # ${l.trans({ en: "Translations", ko: "번역" })}
                 ├── moduleA.document.ts   # ${l.trans({ en: "Document", ko: "문서" })}

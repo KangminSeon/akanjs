@@ -70,6 +70,8 @@ Domain modules
 
 Icecream order domain module
 
+Business intent
+
 Types and schemas
 
 Translations
@@ -93,6 +95,10 @@ Detail view UI
 Integration UI
 
 Each file has a specific purpose in organizing your ice cream order feature:
+
+abstract.md
+
+Describes the module's business intent, domain rules, workflows, and agent notes
 
 constant.ts
 
@@ -208,6 +214,7 @@ akan create-module icecreamOrder
     └── koyo/      # ${l.trans({ en: "Individual application", ko: "개별 애플리케이션" })}
         └── lib/          # ${l.trans({ en: "Domain modules", ko: "도메인 모듈" })}
             └── icecreamOrder/  # ${l.trans({ en: "Icecream order domain module", ko: "아이스크림 주문 도메인 모듈" })}
+                ├── icecreamOrder.abstract.md   # ${l.trans({ en: "Business intent", ko: "비즈니스 의도" })}
                 ├── icecreamOrder.constant.ts   # ${l.trans({ en: "Types and schemas", ko: "타입과 스키마" })}
                 ├── icecreamOrder.dictionary.ts # ${l.trans({ en: "Translations", ko: "번역" })}
                 ├── icecreamOrder.document.ts   # ${l.trans({ en: "Document", ko: "문서" })}

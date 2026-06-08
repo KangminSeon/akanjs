@@ -99,6 +99,10 @@ const isAllowedLibRootFile = (filename: string) =>
   libRootAllowedFiles.has(filename) || rootSignalTestFilePattern.test(filename);
 const getScanPath = (exec: AppExecutor | LibExecutor, relativePath: string) =>
   path.posix.join(`${exec.type}s`, exec.name, relativePath.split(path.sep).join("/"));
+const getModuleNameFromPath = (kind: ModuleKind, modulePath: string) => {
+  const dirname = path.basename(modulePath);
+  return kind === "service" ? dirname.replace(/^_+/, "") : dirname;
+};
 
 async function assertScanConvention(exec: AppExecutor | LibExecutor, libRoot: { files: string[]; dirs: string[] }) {
   const violations: string[] = [];
@@ -158,6 +162,7 @@ async function validateModuleFiles(
   modulePath: string,
 ) {
   const { files, dirs } = await exec.getFilesAndDirs(modulePath);
+  const moduleName = getModuleNameFromPath(kind, modulePath);
   dirs.forEach((dirname) => {
     violations.push(`${getScanPath(exec, path.join(modulePath, dirname))}: unsupported module folder`);
   });
@@ -165,6 +170,7 @@ async function validateModuleFiles(
   files.forEach((filename) => {
     const filePath = path.join(modulePath, filename);
     if (filename === "index.ts" || filename === "index.tsx" || isAllowedTestFile(filename)) return;
+    if (filename === `${moduleName}.abstract.md`) return;
 
     const uiMatch = filename.match(/\.([A-Z][A-Za-z0-9]*)\.tsx$/);
     if (uiMatch) {
@@ -515,7 +521,7 @@ export class PkgInfo {
   readonly name: string;
   private scanResult: PkgScanResult;
 
-  static async getScanResult(exec: PkgExecutor) {
+  static async scanExecutor(exec: PkgExecutor) {
     const [tsconfig, rootPackageJson] = await Promise.all([exec.getTsConfig(), exec.workspace.getPackageJson()]);
     const scanner = await TypeScriptDependencyScanner.from(exec);
     const npmSet = new Set(Object.keys({ ...rootPackageJson.dependencies, ...rootPackageJson.devDependencies }));
@@ -547,7 +553,7 @@ export class PkgInfo {
     const existingPkgInfo = PkgInfo.#pkgInfos.get(exec.name);
     if (existingPkgInfo && !options.refresh) return existingPkgInfo;
 
-    const scanResult = await PkgInfo.getScanResult(exec);
+    const scanResult = await PkgInfo.scanExecutor(exec);
     const pkgInfo = new PkgInfo(exec, scanResult);
     PkgInfo.#pkgInfos.set(exec.name, pkgInfo);
     return pkgInfo;

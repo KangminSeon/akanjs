@@ -1,5 +1,17 @@
 # akanjs
 
+## 2.2.11
+
+### Patch Changes
+
+- 8190632: Add Akan server console support with CLI/build integration and documentation for console-oriented workflows.
+- 4bce7f9: Add initial LLM discovery docs and stabilize Akan client/runtime behavior.
+
+  - Add `/llms.txt` documentation discovery for Akan docs.
+  - Add `wsConnect` support for automatic WebSocket connections.
+  - Delay client bootstrap module execution until the SSR fizz stream is ready.
+  - Improve route tree, HMR, fetch, store, and SSR/client runtime stability.
+
 ## 2.2.7
 
 ### Patch Changes

@@ -19,6 +19,8 @@
 
 Overview
 
+Describes business intent, domain rules, workflows, data meaning, related modules, and agent notes that should be read before implementation changes.
+
 Defines the business data shape: fields, enums, model layers, helpers, hidden/secret fields, and resolved fields.
 
 Defines user-facing language for fields, insights, queries, slices, endpoints, errors, and UI text.
@@ -40,6 +42,8 @@ Renders full-model detail UI for detail pages, view modals, and sections that ne
 Packages small client helper UI such as action buttons, toolboxes, dialogs, query panels, and navigation helpers.
 
 Composes page sections with Load.Units, Load.View, Unit/View display, Util controls, and section-level UI state.
+
+Start with the business intent and durable domain rules.
 
 Start with the business shape and generated model layers.
 

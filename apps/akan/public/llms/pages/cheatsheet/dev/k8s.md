@@ -10,6 +10,7 @@
 
 - Kubernetes (#overview)
 - Architecture (#architecture)
+- Open Console (#console)
 - Values (#values)
 - Scale (#scale)
 - Tips (#tips)
@@ -33,6 +34,14 @@ Architecture
 Think of the chart as four connected pieces. Users enter through Ingress, the Service routes traffic to the Pod, and the Pod stores local data through a PVC.
 
 Mental model
+
+Open Console
+
+Use `kubectl exec` to run the generated `console.js` already embedded in the built app image.
+
+The console starts a separate no-listen server process in the same pod; it does not attach to the running `main.js` memory.
+
+Pod exec
 
 Values
 
@@ -66,6 +75,12 @@ Domain
   -> Service:8282
   -> Deployment Pod
   -> PVC /workspace/sqlite
+```
+
+### Code
+
+```bash
+kubectl exec -it -n prod pod/myapp-xxxxx -c myapp -- sh -lc 'AKAN_CONSOLE=1 bun console.js'
 ```
 
 ### values.yaml

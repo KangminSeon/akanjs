@@ -23,6 +23,8 @@ Search feature module with service methods, endpoints, client store, and admin Z
 
 Shared file-access service that reads blob data through a typed endpoint.
 
+Describes the service workflow intent, domain rules, integration boundaries, and agent notes.
+
 Implements the workflow itself and injects runtime values or other services.
 
 Exposes the workflow through endpoint, internal task, cron, or custom route signals.
@@ -47,7 +49,7 @@ Use a normal module when the feature is centered on a business object such as Us
 
 Service File Map
 
-A service module only needs the files that the feature actually uses. Unlike model-backed modules, it does not own constant, document, template, unit, or view files by default.
+A service module only needs the files that the feature actually uses. Start with service.abstract.md for workflow intent, then add service, signal, dictionary, store, Util, or Zone files as the feature grows.
 
 Folder Shape
 
@@ -59,6 +61,7 @@ Start small. A server-only module might only have service and signal files. Add 
 
 ```ts
 libs/util/lib/_search/
+  search.abstract.md     // workflow intent
   search.service.ts      // workflow
   search.signal.ts       // API
   search.dictionary.ts   // text

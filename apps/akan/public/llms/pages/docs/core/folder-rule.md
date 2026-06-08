@@ -88,11 +88,11 @@ Module Folder Rule
 
 Inside lib/, folder names describe the kind of business concept you are building. Use a normal folder for data your business owns, an underscore folder for a capability or integration, and __scalar for reusable value shapes.
 
-Use this for nouns your business owns and saves. Examples: user, product, order, reservation, invoice.
+Use this for nouns your business owns and saves. Keep model.abstract.md here for business intent, domain rules, workflows, and agent notes.
 
-Use this for actions, workflows, or integrations. Examples: _payment, _mailer, _search, _analytics.
+Use this for actions, workflows, or integrations. The folder keeps the underscore, but the abstract file drops it, such as lib/_payment/payment.abstract.md.
 
-Use this for reusable value shapes shared by models. Examples: money, address, phoneNumber, dateRange.
+Use this for reusable value shapes shared by models. Keep scalar.abstract.md here when validation meaning or reuse rules need explanation.
 
 A simple rule of thumb: if you can say 'this is a thing we store', use lib/<model>/. If you can say 'this is something we do', use lib/_<service>/.
 
@@ -181,12 +181,15 @@ libs/shared/
 ```bash
 lib/
 ├── user/             # database module
+│   └── user.abstract.md
 ├── project/          # database module
 ├── _payment/         # service module
+│   └── payment.abstract.md
 ├── _notification/    # service module
 └── __scalar/
     ├── address/
     └── money/
+        └── money.abstract.md
 ```
 
 ### Code movement
