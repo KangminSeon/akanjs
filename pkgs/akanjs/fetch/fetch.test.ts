@@ -630,6 +630,33 @@ describe("FetchClient HTTP generation", () => {
     ]);
   });
 
+  test("refreshes cached handlers when a serialized signal is applied again", async () => {
+    setMockFetch();
+    jsonResponses.push("before", "after");
+    const client = new FetchClient("https://api.example", {}, { service: serviceSignal });
+
+    expect(await client.handler.getThing("1234567890abcdef12345678", [], null)).toBe("before");
+
+    client.applySignal({
+      service: {
+        endpoint: {
+          getThing: {
+            type: "query",
+            path: "/changed/:id",
+            args: [arg("param", "id", { refName: "ID" }), arg("search", "version")],
+            returns: { refName: "String" },
+          },
+        },
+      },
+    });
+
+    expect(await client.handler.getThing("1234567890abcdef12345678", "v2")).toBe("after");
+    expect(fetchCalls.map((call) => call.url)).toEqual([
+      "https://api.example/custom/1234567890abcdef12345678",
+      "https://api.example/changed/1234567890abcdef12345678?version=v2",
+    ]);
+  });
+
   test("does not require database constants while only indexing shared database signals", () => {
     const missingConstantSignal: SerializedSignal = {
       prefix: "missingConstant",
@@ -768,6 +795,27 @@ describe("FetchClient database signal helpers", () => {
 });
 
 describe("WsClient", () => {
+  test("warns when realtime APIs are used before websocket connection", () => {
+    setFakeWebSocket();
+    const originalConsoleWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = ((message: string) => {
+      warnings.push(message);
+    }) as typeof console.warn;
+    try {
+      const client = new WsClient("ws://example/ws");
+      client.emit("send", ["hello"]);
+      client.subscribe({ key: "roomKey", data: ["r1"], handleEvent: () => undefined });
+
+      expect(warnings).toEqual([
+        expect.stringContaining('before emit "send"'),
+        expect.stringContaining('before subscribe "roomKey"'),
+      ]);
+    } finally {
+      console.warn = originalConsoleWarn;
+    }
+  });
+
   test("manages websocket lifecycle, messages, listeners, and subscriptions", () => {
     setFakeWebSocket();
     const client = new WsClient("ws://example/ws");
