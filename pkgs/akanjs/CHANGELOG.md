@@ -1,5 +1,12 @@
 # akanjs
 
+## 2.2.12
+
+### Patch Changes
+
+- 666e46c: Improve SSR hydration payload handling, redirect status propagation, and restore dev HMR incremental refresh behavior.
+- 666e46c: Align RSC not-found responses with HTTP 404 semantics and add request-scoped policy tracking for future cache decisions.
+
 ## 2.2.11
 
 ### Patch Changes

@@ -1,5 +1,13 @@
 # @akanjs/devkit
 
+## 2.2.12
+
+### Patch Changes
+
+- Updated dependencies [666e46c]
+- Updated dependencies [666e46c]
+  - akanjs@2.2.12
+
 ## 2.2.11
 
 ### Patch Changes

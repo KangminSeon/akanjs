@@ -1,5 +1,7 @@
 # create-akan-workspace
 
+## 2.2.12
+
 ## 2.2.11
 
 ### Patch Changes
