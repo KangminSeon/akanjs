@@ -1,6 +1,12 @@
-import type { AkanNotFoundError, AkanRedirectError, LayoutFallbackRoute, PathRoute } from "akanjs/client";
+import type {
+  AkanNotFoundError,
+  AkanRedirectError,
+  LayoutFallbackRoute,
+  PathRoute,
+  RedirectStatus,
+} from "akanjs/client";
 import { type AkanI18nConfig, DEFAULT_AKAN_I18N, getBasePathFromPathname, Logger } from "akanjs/common";
-import { cookies, getRequest, getRequestTheme, requestStorage } from "akanjs/fetch";
+import { cookies, getRequest, getRequestTheme, requestStorage, updateRequestPolicy } from "akanjs/fetch";
 import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-server-dom-webpack/server.node";
 import type { ClientManifest } from "./artifact";
@@ -40,7 +46,7 @@ interface UpdateCssAssetsMsg {
 }
 type InMsg = InitMsg | RenderMsg | ReloadMsg | UpdateCssAssetsMsg;
 type RenderControl =
-  | { type: "redirect"; location: string; method: "replace" | "push" }
+  | { type: "redirect"; location: string; method: "replace" | "push"; status: RedirectStatus }
   | { type: "not-found" }
   | { type: "error"; error: unknown };
 
@@ -82,7 +88,9 @@ export function isAkanRedirectError(error: unknown): error is AkanRedirectError 
     "digest" in error &&
     (error as { digest?: unknown }).digest === "AKAN_REDIRECT" &&
     "location" in error &&
-    typeof (error as { location?: unknown }).location === "string"
+    typeof (error as { location?: unknown }).location === "string" &&
+    "status" in error &&
+    typeof (error as { status?: unknown }).status === "number"
   );
 }
 
@@ -272,6 +280,7 @@ class RscRenderer {
         const match = RouteTreeBuilder.match(urlObj.pathname, this.#pathRoutes);
         activeRoute.match = match;
         const routeId = match?.pathRoute.path ?? "__not_found__";
+        updateRequestPolicy({ routeId });
         this.#stats.lastRenderRouteId = routeId;
         this.#stats.lastRenderKind = match ? "route" : "not-found";
         if (match)
@@ -365,7 +374,13 @@ class RscRenderer {
       if (isAkanRedirectError(error)) {
         this.#stats.lastRenderKind = "redirect";
         this.#logger.verbose(`render[${requestId}] redirect ${error.location}`);
-        this.#send({ type: "redirect", requestId, location: error.location, method: error.method });
+        this.#send({
+          type: "redirect",
+          requestId,
+          location: error.location,
+          method: error.method,
+          status: error.status,
+        });
         return;
       }
       if (isAkanNotFoundError(error)) {
@@ -474,7 +489,12 @@ class RscRenderer {
     const stream = await renderToReadableStream(element, clientManifest, {
       onError: (error) => {
         if (isAkanRedirectError(error)) {
-          controlRef.current = { type: "redirect", location: error.location, method: error.method };
+          controlRef.current = {
+            type: "redirect",
+            location: error.location,
+            method: error.method,
+            status: error.status,
+          };
           return error.digest;
         }
         if (isAkanNotFoundError(error)) {
@@ -558,7 +578,13 @@ class RscRenderer {
   #sendRenderControl(requestId: string, control: RenderControl): void {
     if (control.type === "redirect") {
       this.#logger.verbose(`render[${requestId}] redirect ${control.location}`);
-      this.#send({ type: "redirect", requestId, location: control.location, method: control.method });
+      this.#send({
+        type: "redirect",
+        requestId,
+        location: control.location,
+        method: control.method,
+        status: control.status,
+      });
       return;
     }
     if (control.type === "error") {
@@ -594,6 +620,11 @@ class RscRenderer {
   async #getResultCacheKey(request: Request, url: URL, pathRoute: PathRoute): Promise<string | null> {
     const config = await pathRoute.renderPage.getPageConfig?.();
     const ttl = RscRenderer.#normalizeCacheTtl(config?.rscCacheTtl);
+    updateRequestPolicy({
+      rscCache: config?.rscCache,
+      rscCacheTtl: config?.rscCacheTtl,
+      cacheable: config?.rscCache === "public" || ttl !== null,
+    });
     if (config?.rscCache !== "public" && ttl === null) {
       this.#resultCacheBypass += 1;
       return null;

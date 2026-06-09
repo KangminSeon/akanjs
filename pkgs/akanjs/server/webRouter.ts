@@ -22,13 +22,40 @@ import { HMR_CLIENT_SCRIPT } from "./hmr/clientScript";
 import type { HmrWsData, HmrWsHub } from "./hmr/wsHub";
 import { ImageOptimizer } from "./imageOptimizer";
 import { createDefaultRobotsTxt } from "./robots";
-import { RscWorker } from "./rscWorkerHost";
+import { type RscRedirectMethod, type RscRedirectStatus, RscWorker } from "./rscWorkerHost";
 import { createDefaultSitemapXml, getSitemapBasePath } from "./sitemap";
 import { SsrFromRscRenderer } from "./ssrFromRscRenderer";
 import { createSystemPageResponse, getSystemPageHomeHref } from "./systemPages";
 import type { BaseBuildArtifact, HttpRoutes, RenderState } from "./types";
 
 const RESERVED_BASE_PATHS = new Set(["admin"]);
+
+export function createRscRedirectResponse(
+  location: string,
+  method: RscRedirectMethod,
+  status: RscRedirectStatus = 307,
+): Response {
+  return new Response(JSON.stringify({ type: "redirect", location, method, status }), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Akan-Redirect": location,
+      "X-Akan-Redirect-Method": method,
+      "X-Akan-Redirect-Status": String(status),
+    },
+  });
+}
+
+export function createRscStreamResponse(stream: BodyInit, status = 200): Response {
+  return new Response(stream, {
+    status,
+    headers: {
+      "Content-Type": "text/x-component; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
+  });
+}
 
 export function normalizeRscTargetUrlForHostBasePath(
   targetUrl: URL,
@@ -262,17 +289,12 @@ export class WebRouter {
           const result = await this.#rsc.renderWithMeta(rscReq, {
             clientManifest: manifest.clientManifest,
           });
-          if (result.type === "redirect") return WebRouter.#rscRedirectResponse(result.location, result.method);
-          if (result.type === "not-found") return WebRouter.#rscRedirectResponse("/404", "replace");
-          if (result.status === 404) return WebRouter.#rscRedirectResponse("/404", "replace");
+          if (result.type === "redirect")
+            return createRscRedirectResponse(result.location, result.method, result.status);
+          if (result.type === "not-found") return WebRouter.#rscNotFoundResponse();
           if (result.status && result.status >= 500)
             return this.#renderRscErrorResponse("__rsc", "Internal Server Error");
-          return new Response(result.stream, {
-            headers: {
-              "Content-Type": "text/x-component; charset=utf-8",
-              "Cache-Control": "no-store",
-            },
-          });
+          return createRscStreamResponse(result.stream, result.status ?? 200);
         } catch (err) {
           return this.#renderRscErrorResponse("__rsc", err);
         }
@@ -368,7 +390,8 @@ export class WebRouter {
           const rscResult = await this.#rsc.renderWithMeta(req, {
             clientManifest: manifest.clientManifest,
           });
-          if (rscResult.type === "redirect") return Response.redirect(new URL(rscResult.location, url.origin), 307);
+          if (rscResult.type === "redirect")
+            return Response.redirect(new URL(rscResult.location, url.origin), rscResult.status);
           if (rscResult.type === "not-found") return this.#renderNotFoundResponse(req, url);
           const themeCookieExists = WebRouter.#hasCookie(req, "theme");
           const htmlStream = await new SsrFromRscRenderer().render({
@@ -417,6 +440,7 @@ export class WebRouter {
       ssrChunkRegistrySize: ssrStats.ssrChunkRegistrySize,
       ssrChunkLoadCount: ssrStats.ssrChunkLoadCount,
       ssrChunkCacheHitCount: ssrStats.ssrChunkCacheHitCount,
+      ssrChunkEvictionCount: ssrStats.ssrChunkEvictionCount,
       httpFullSsrCount: this.#requestStats.fullSsr,
       httpRscNavigationCount: this.#requestStats.rscNavigation,
       httpStaticAssetCount: this.#requestStats.staticAsset,
@@ -651,15 +675,10 @@ export class WebRouter {
     if (!last || last.index === undefined) return `${html}\n${snippet}`;
     return `${html.slice(0, last.index)}${snippet}\n${html.slice(last.index)}`;
   }
-  static #rscRedirectResponse(location: string, method: "replace" | "push") {
-    return new Response(JSON.stringify({ type: "redirect", location, method }), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-        "Cache-Control": "no-store",
-        "X-Akan-Redirect": location,
-        "X-Akan-Redirect-Method": method,
-      },
+  static #rscNotFoundResponse(): Response {
+    return new Response("Not Found", {
+      status: 404,
+      headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
     });
   }
   #getProductionRouteCache() {
