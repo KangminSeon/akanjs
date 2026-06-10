@@ -1,5 +1,4 @@
 import type {
-  Head,
   LayoutFallbackRoute,
   LayoutModule,
   LayoutProps,
@@ -19,6 +18,7 @@ import {
   parseRouteModuleKey,
   routeSegmentToTreePath,
 } from "akanjs/common";
+import { resolveHeadExport, resolveMetadataHead } from "./metadata";
 
 export type PagesContext = Record<string, () => Promise<RouteModule>>;
 
@@ -44,11 +44,21 @@ export interface RouteModuleCacheStats {
 }
 
 export class RouteTreeBuilder {
-  static readonly #pageRouteExports = new Set(["default", "pageConfig", "head", "generateHead", "Loading"]);
+  static readonly #pageRouteExports = new Set([
+    "default",
+    "pageConfig",
+    "head",
+    "metadata",
+    "generateHead",
+    "generateMetadata",
+    "Loading",
+  ]);
   static readonly #rootLayoutExports = new Set([
     "default",
     "head",
+    "metadata",
     "generateHead",
+    "generateMetadata",
     "fonts",
     "manifest",
     "theme",
@@ -60,7 +70,16 @@ export class RouteTreeBuilder {
     "NotFound",
     "Error",
   ]);
-  static readonly #layoutRouteExports = new Set(["default", "head", "generateHead", "Loading", "NotFound", "Error"]);
+  static readonly #layoutRouteExports = new Set([
+    "default",
+    "head",
+    "metadata",
+    "generateHead",
+    "generateMetadata",
+    "Loading",
+    "NotFound",
+    "Error",
+  ]);
   static readonly #moduleCacheStats: RouteModuleCacheStats = {
     moduleCount: 0,
     loadedModuleCount: 0,
@@ -279,6 +298,18 @@ export class RouteTreeBuilder {
     if ("head" in mod && "generateHead" in mod) {
       throw new Error(`[route-convention] head and generateHead cannot both be exported in ${key}`);
     }
+    if (
+      !parsed.isInternalRootLayout &&
+      ("head" in mod || "generateHead" in mod) &&
+      ("metadata" in mod || "generateMetadata" in mod)
+    ) {
+      throw new Error(
+        `[route-convention] head/generateHead and metadata/generateMetadata cannot both be exported in ${key}`,
+      );
+    }
+    if ("metadata" in mod && "generateMetadata" in mod) {
+      throw new Error(`[route-convention] metadata and generateMetadata cannot both be exported in ${key}`);
+    }
   }
 
   static #makeRouteRender(key: string, kind: "page" | "layout", loader: () => Promise<RouteModule>): RouteRender {
@@ -304,8 +335,16 @@ export class RouteTreeBuilder {
           routeRender.NotFound = layoutMod.NotFound;
           routeRender.Error = layoutMod.Error;
         }
-        if (mod.generateHead) return mod.generateHead(props);
-        return mod.head as Head | null | undefined;
+        if (mod.generateHead) {
+          const head = await mod.generateHead(props);
+          if (head !== null && head !== undefined) return resolveHeadExport(head);
+        }
+        if (mod.generateMetadata) {
+          const metadata = await mod.generateMetadata(props);
+          return metadata === null || metadata === undefined ? metadata : resolveMetadataHead(metadata);
+        }
+        if (mod.head !== undefined) return mod.head === null ? null : resolveHeadExport(mod.head);
+        return mod.metadata === undefined ? undefined : resolveMetadataHead(mod.metadata);
       },
     };
     if (kind === "page") {

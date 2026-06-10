@@ -5,33 +5,250 @@ import { type AkanI18nConfig, DEFAULT_AKAN_I18N, Logger } from "akanjs/common";
 import type { AkanTheme } from "akanjs/fetch";
 import type { AkanMetricsReport } from "akanjs/service";
 import type { ClientManifest } from "./artifact";
+import type { RouteCacheRenderState } from "./cachePolicy";
+import type { SsrLateRedirect } from "./ssrTypes";
 import type { BaseBuildArtifact, CssAsset } from "./types";
 
-interface RscPending {
+// This is a bounded queue guard, not a pause/resume backpressure protocol.
+// If the host stream cannot drain IPC chunks quickly enough, the render fails
+// fast and the worker is cancelled instead of buffering unbounded Flight data.
+const DEFAULT_RSC_HOST_MAX_PENDING_CHUNKS = 256;
+
+export interface RscPending {
   onChunk: (data: Uint8Array) => void;
   onEnd: () => void;
   onError: (message: string) => void;
   onMeta?: (meta: { theme?: AkanTheme; status?: number }) => void;
+  onCacheState?: (state: RouteCacheRenderState) => void;
   onRedirect?: (location: string, method: RscRedirectMethod, status: RscRedirectStatus) => void;
+  onLateRedirect?: (location: string, method: RscRedirectMethod, status: RscRedirectStatus) => void;
   onNotFound?: () => void;
 }
 
 export type RscRedirectMethod = "replace" | "push";
 export type RscRedirectStatus = 303 | 307 | 308;
 
+export interface RscWorkerInvalidateCacheMessage {
+  type: "invalidate-cache";
+  reason?: string;
+}
+
 export type RscRenderResult =
-  | { type: "stream"; stream: ReadableStream<Uint8Array>; theme?: AkanTheme; status?: number }
+  | {
+      type: "stream";
+      stream: ReadableStream<Uint8Array>;
+      theme?: AkanTheme;
+      status?: number;
+      lateControl: Promise<SsrLateRedirect | null>;
+      cacheState: Promise<RouteCacheRenderState>;
+      cancel: (reason?: unknown) => void;
+    }
   | { type: "redirect"; location: string; method: RscRedirectMethod; status: RscRedirectStatus }
   | { type: "not-found" };
+
+export function getRscHostMaxPendingChunks(value = process.env.AKAN_RSC_HOST_MAX_PENDING_CHUNKS): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_RSC_HOST_MAX_PENDING_CHUNKS;
+}
+
+export function nextRscHostPendingChunkCount(currentPendingChunks: number, desiredSize: number | null): number {
+  return desiredSize !== null && desiredSize <= 0 ? currentPendingChunks + 1 : 0;
+}
+
+export function isRscHostPendingChunkOverflow(pendingChunks: number, maxPendingChunks: number): boolean {
+  return pendingChunks > maxPendingChunks;
+}
+
+function createRscRenderAbortError(reason?: unknown): Error {
+  if (reason instanceof Error) return reason;
+  const error = new Error(reason === undefined ? "rsc render aborted" : String(reason));
+  error.name = "AbortError";
+  return error;
+}
+
+export function createIdempotentRscRenderCancel(onCancel: (reason?: unknown) => void): (reason?: unknown) => void {
+  let cancelled = false;
+  return (reason?: unknown) => {
+    if (cancelled) return;
+    cancelled = true;
+    onCancel(reason);
+  };
+}
+
+export function createRscWorkerInvalidateCacheMessage(reason?: string): RscWorkerInvalidateCacheMessage {
+  return reason ? { type: "invalidate-cache", reason } : { type: "invalidate-cache" };
+}
+
+export function createRscHostRenderStream(input: {
+  setPending: (pending: RscPending) => void;
+  deletePending: () => void;
+  sendRenderOrQueue: () => void;
+  cancelRender: (reason?: unknown) => void;
+  maxPendingChunks?: number;
+  signal?: AbortSignal;
+  onPendingChunkOverflow?: () => void;
+}): Promise<RscRenderResult> {
+  let settled = false;
+  let stream!: ReadableStream<Uint8Array>;
+  let theme: AkanTheme | undefined;
+  let status: number | undefined;
+  let resolveLateControl!: (control: SsrLateRedirect | null) => void;
+  let resolveCacheState!: (state: RouteCacheRenderState) => void;
+  const lateControl = new Promise<SsrLateRedirect | null>((resolve) => {
+    resolveLateControl = resolve;
+  });
+  const cacheState = new Promise<RouteCacheRenderState>((resolve) => {
+    resolveCacheState = resolve;
+  });
+  let lateControlSettled = false;
+  let cacheStateSettled = false;
+  const settleLateControl = (control: SsrLateRedirect | null) => {
+    if (lateControlSettled) return;
+    lateControlSettled = true;
+    resolveLateControl(control);
+  };
+  const settleCacheState = (state: RouteCacheRenderState) => {
+    if (cacheStateSettled) return;
+    cacheStateSettled = true;
+    resolveCacheState(state);
+  };
+  const maxPendingChunks = input.maxPendingChunks ?? getRscHostMaxPendingChunks();
+  let pendingChunks = 0;
+  let removeAbortListener: (() => void) | undefined;
+  const cleanupAbortListener = () => {
+    removeAbortListener?.();
+    removeAbortListener = undefined;
+  };
+  const cancelRender = createIdempotentRscRenderCancel((reason) => {
+    input.deletePending();
+    settleLateControl(null);
+    settleCacheState({ cacheable: false, reason: "cancelled" });
+    input.cancelRender(reason);
+    cleanupAbortListener();
+  });
+
+  return new Promise<RscRenderResult>((resolve, reject) => {
+    stream = new ReadableStream<Uint8Array>({
+      start: (controller) => {
+        const abortRender = () => {
+          const error = createRscRenderAbortError(input.signal?.reason);
+          cancelRender(error);
+          if (!settled) {
+            settled = true;
+            reject(error);
+            return;
+          }
+          controller.error(error);
+        };
+        const settleStream = () => {
+          if (settled) return;
+          settled = true;
+          resolve({ type: "stream", stream, theme, status, lateControl, cacheState, cancel: cancelRender });
+        };
+        input.setPending({
+          onMeta: (meta) => {
+            theme = meta.theme;
+            status = meta.status;
+            settleStream();
+          },
+          onChunk: (data) => {
+            settleStream();
+            pendingChunks = nextRscHostPendingChunkCount(pendingChunks, controller.desiredSize);
+            if (isRscHostPendingChunkOverflow(pendingChunks, maxPendingChunks)) {
+              const msg = `rsc worker host queue exceeded ${maxPendingChunks} pending chunks`;
+              const error = new Error(msg);
+              input.onPendingChunkOverflow?.();
+              cancelRender(error);
+              controller.error(error);
+              return;
+            }
+            controller.enqueue(data);
+          },
+          onEnd: () => {
+            settleLateControl(null);
+            settleCacheState({ cacheable: false, reason: "missing-cache-state" });
+            cleanupAbortListener();
+            settleStream();
+            controller.close();
+          },
+          onError: (msg) => {
+            settleLateControl(null);
+            settleCacheState({ cacheable: false, reason: "error" });
+            cleanupAbortListener();
+            if (!settled) {
+              settled = true;
+              reject(new Error(msg));
+              return;
+            }
+            controller.error(new Error(msg));
+          },
+          onRedirect: (location, method, status) => {
+            settleLateControl(null);
+            settleCacheState({ cacheable: false, reason: "redirect" });
+            cleanupAbortListener();
+            if (!settled) {
+              settled = true;
+              resolve({ type: "redirect", location, method, status });
+              controller.close();
+              return;
+            }
+            controller.error(new Error(`redirect after stream started: ${location}`));
+          },
+          onLateRedirect: (location, method, status) => {
+            settleLateControl({ type: "redirect", location, method, status });
+          },
+          onCacheState: (state) => {
+            settleCacheState(state);
+          },
+          onNotFound: () => {
+            settleLateControl(null);
+            settleCacheState({ cacheable: false, reason: "not-found" });
+            cleanupAbortListener();
+            if (!settled) {
+              settled = true;
+              resolve({ type: "not-found" });
+              controller.close();
+              return;
+            }
+            controller.error(new Error("not-found after stream started"));
+          },
+        });
+        if (input.signal) {
+          if (input.signal.aborted) {
+            abortRender();
+            return;
+          }
+          input.signal.addEventListener("abort", abortRender, { once: true });
+          removeAbortListener = () => input.signal?.removeEventListener("abort", abortRender);
+        }
+        input.sendRenderOrQueue();
+      },
+      cancel: (reason) => {
+        cancelRender(reason);
+      },
+      pull: () => {
+        pendingChunks = Math.max(0, pendingChunks - 1);
+      },
+    });
+  });
+}
 
 type RscInMsg =
   | { type: "hello" }
   | { type: "ready" }
   | { type: "reloaded"; buildId: number }
   | { type: "meta"; requestId: string; theme?: AkanTheme; status?: number }
+  | { type: "cache-state"; requestId: string; state: RouteCacheRenderState }
   | { type: "chunk"; requestId: string; data: Uint8Array }
   | { type: "end"; requestId: string }
   | { type: "redirect"; requestId: string; location: string; method?: RscRedirectMethod; status?: RscRedirectStatus }
+  | {
+      type: "late-redirect";
+      requestId: string;
+      location: string;
+      method?: RscRedirectMethod;
+      status?: RscRedirectStatus;
+    }
   | { type: "not-found"; requestId: string }
   | { type: "metrics"; metrics: AkanMetricsReport }
   | { type: "error"; requestId: string; message: string; buildId?: number };
@@ -108,6 +325,7 @@ export class RscWorker {
   #recycleCount = 0;
   #lastRecycleReason: string | undefined;
   #lastWorkerMetrics: AkanMetricsReport = {};
+  #hostPendingChunkOverflowCount = 0;
   #restartTimer: ReturnType<typeof setTimeout> | null = null;
   #recycleTimer: ReturnType<typeof setTimeout> | null = null;
   #rollingRecycle: { oldProc: Bun.Subprocess<"ignore", "inherit", "inherit">; reason: string } | null = null;
@@ -179,73 +397,45 @@ export class RscWorker {
       },
       cancel: () => {
         this.#pending.delete(requestId);
+        this.#cancelRender(requestId);
       },
     });
   }
 
-  renderWithMeta(req: Request, options: { clientManifest?: ClientManifest } = {}): Promise<RscRenderResult> {
+  renderWithMeta(
+    req: Request,
+    options: { clientManifest?: ClientManifest; signal?: AbortSignal } = {},
+  ): Promise<RscRenderResult> {
     const requestId = crypto.randomUUID();
-    let settled = false;
-    let stream!: ReadableStream<Uint8Array>;
-    let theme: AkanTheme | undefined;
-    let status: number | undefined;
-    const result = new Promise<RscRenderResult>((resolve, reject) => {
-      stream = new ReadableStream<Uint8Array>({
-        start: (controller) => {
-          const settleStream = () => {
-            if (settled) return;
-            settled = true;
-            resolve({ type: "stream", stream, theme, status });
-          };
-          this.#pending.set(requestId, {
-            onMeta: (meta) => {
-              theme = meta.theme;
-              status = meta.status;
-              settleStream();
-            },
-            onChunk: (data) => {
-              settleStream();
-              controller.enqueue(data);
-            },
-            onEnd: () => {
-              settleStream();
-              controller.close();
-            },
-            onError: (msg) => {
-              if (!settled) {
-                settled = true;
-                reject(new Error(msg));
-                return;
-              }
-              controller.error(new Error(msg));
-            },
-            onRedirect: (location, method, status) => {
-              if (!settled) {
-                settled = true;
-                resolve({ type: "redirect", location, method, status });
-                controller.close();
-                return;
-              }
-              controller.error(new Error(`redirect after stream started: ${location}`));
-            },
-            onNotFound: () => {
-              if (!settled) {
-                settled = true;
-                resolve({ type: "not-found" });
-                controller.close();
-                return;
-              }
-              controller.error(new Error("not-found after stream started"));
-            },
-          });
-          this.#sendRenderOrQueue(requestId, req, options.clientManifest);
-        },
-        cancel: () => {
-          this.#pending.delete(requestId);
-        },
-      });
+    return createRscHostRenderStream({
+      setPending: (pending) => {
+        this.#pending.set(requestId, pending);
+      },
+      deletePending: () => {
+        this.#pending.delete(requestId);
+      },
+      sendRenderOrQueue: () => {
+        this.#sendRenderOrQueue(requestId, req, options.clientManifest);
+      },
+      cancelRender: () => {
+        this.#cancelRender(requestId);
+      },
+      signal: options.signal,
+      onPendingChunkOverflow: () => {
+        this.#hostPendingChunkOverflowCount += 1;
+      },
     });
-    return result;
+  }
+
+  invalidateRouteResultCache(reason?: string): void {
+    if (this.#status !== "ready") return;
+    try {
+      this.#proc.send(createRscWorkerInvalidateCacheMessage(reason));
+    } catch (error) {
+      this.#logger.warn(
+        `rsc worker cache invalidate send failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   kill(): void {
@@ -265,8 +455,18 @@ export class RscWorker {
   }
 
   getMetrics(): AkanMetricsReport {
-    return {
-      ...this.#lastWorkerMetrics,
+    const {
+      rscWorkerPid: _rscWorkerPid,
+      rscWorkerStatus: _rscWorkerStatus,
+      rscWorkerRestartCount: _rscWorkerRestartCount,
+      rscWorkerRecycleCount: _rscWorkerRecycleCount,
+      rscWorkerLastRecycleReason: _rscWorkerLastRecycleReason,
+      rscPendingRenderCount: _rscPendingRenderCount,
+      rscQueuedSendCount: _rscQueuedSendCount,
+      rscHostPendingChunkOverflowCount: _rscHostPendingChunkOverflowCount,
+      ...workerMetrics
+    } = this.#lastWorkerMetrics;
+    return Object.assign(workerMetrics, {
       rscWorkerPid: this.#proc.pid,
       rscWorkerStatus: this.#status,
       rscWorkerRestartCount: this.#restartCount,
@@ -274,7 +474,8 @@ export class RscWorker {
       rscWorkerLastRecycleReason: this.#lastRecycleReason,
       rscPendingRenderCount: this.#pending.size,
       rscQueuedSendCount: this.#queuedSends.length,
-    };
+      rscHostPendingChunkOverflowCount: this.#hostPendingChunkOverflowCount,
+    });
   }
 
   restartWhenIdle(reason: string): boolean {
@@ -385,6 +586,10 @@ export class RscWorker {
 
   #handleMessage(message: RscInMsg, proc: Bun.Subprocess<"ignore", "inherit", "inherit">): void {
     if (proc !== this.#proc) return;
+    if (message.type === "cache-state") {
+      this.#pending.get(message.requestId)?.onCacheState?.(message.state);
+      return;
+    }
     switch (message.type) {
       case "hello":
         // Re-injecting `#clientManifest` / `#cssAssets` here is what makes crash
@@ -427,6 +632,11 @@ export class RscWorker {
         this.#resolvePending(message.requestId, (p) =>
           p.onRedirect?.(message.location, message.method ?? "replace", message.status ?? 307),
         );
+        return;
+      case "late-redirect":
+        this.#pending
+          .get(message.requestId)
+          ?.onLateRedirect?.(message.location, message.method ?? "replace", message.status ?? 307);
         return;
       case "not-found":
         this.#resolvePending(message.requestId, (p) => p.onNotFound?.());
@@ -485,6 +695,16 @@ export class RscWorker {
       this.#resolvePending(requestId, (p) => p.onError("rsc worker is stopped"));
     } else {
       this.#queuedSends.push(send);
+    }
+  }
+
+  #cancelRender(requestId: string): void {
+    if (this.#status !== "ready") return;
+    try {
+      this.#proc.send({ type: "cancel", requestId });
+    } catch {
+      // The render stream is already detached on the host side. If the worker
+      // died between cancellation and this IPC send, its exit path will clean up.
     }
   }
 

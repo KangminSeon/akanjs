@@ -1,4 +1,4 @@
-import type { AkanTheme } from "akanjs/fetch";
+import type { AkanRequestStore, AkanTheme } from "akanjs/fetch";
 
 export interface SsrManifestEntry {
   id: string;
@@ -19,8 +19,16 @@ export interface SsrChunkRegistryStats {
   ssrChunkEvictionCount: number;
 }
 
+export interface SsrLateRedirect {
+  type: "redirect";
+  location: string;
+  method: "replace" | "push";
+  status: 303 | 307 | 308;
+}
+
 export interface SsrFromRscInput {
   request?: Request;
+  requestStore?: AkanRequestStore;
   rscStream: ReadableStream<Uint8Array>;
   ssrManifest: SsrManifest;
   bootstrapModules?: string[];
@@ -45,4 +53,6 @@ export interface SsrFromRscInput {
   importmap?: Record<string, string>;
   theme?: AkanTheme;
   injectThemeInitScript?: boolean;
+  lateControl?: Promise<SsrLateRedirect | null>;
+  onCancel?: (reason?: unknown) => void;
 }

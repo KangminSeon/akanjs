@@ -1,11 +1,12 @@
 import { Readable } from "node:stream";
-import { type AkanTheme, pushRequestFallback, requestStorage } from "akanjs/fetch";
+import { type AkanRequestStore, type AkanTheme, pushRequestFallback, requestStorage } from "akanjs/fetch";
 import { type ReactNode, use } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
 import { createFromNodeStream } from "react-server-dom-webpack/client.node";
-import type { SsrChunkRegistryStats, SsrFromRscInput } from "./ssrTypes";
+import type { SsrChunkRegistryStats, SsrFromRscInput, SsrLateRedirect } from "./ssrTypes";
 
 const DEFAULT_SSR_CHUNK_REGISTRY_MAX_ENTRIES = 1024;
+const DEFAULT_MAX_PENDING_INLINE_RSC_SCRIPTS = 32;
 
 interface SsrChunkRegistryEntry<T> {
   keys: Set<string>;
@@ -108,6 +109,424 @@ export function createInlineRscScript(chunk: Uint8Array): string {
   return `<script>self.__RSC_PUSH__(${type},${htmlEscapeJsonString(data)})</script>`;
 }
 
+function escapeHtmlAttr(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+export function createSoftRedirectScript(redirect: SsrLateRedirect): string {
+  const method = redirect.method === "push" ? "assign" : "replace";
+  const fallback = `<noscript><meta http-equiv="refresh" content="0;url=${escapeHtmlAttr(redirect.location)}"></noscript>`;
+  return `${fallback}<script>window.location.${method}(${htmlEscapeJsonString(redirect.location)})</script>`;
+}
+
+function sanitizeFlightRows(
+  stream: ReadableStream<Uint8Array>,
+  options: { rewriteStylesheetHints?: boolean } = {},
+): ReadableStream<Uint8Array> {
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  const encoder = new TextEncoder();
+  const hlStylesheetRe = /(:HL\["[^"\\]*(?:\\.[^"\\]*)*",)"stylesheet"(\])/g;
+  const redirectErrorRowRe = /^([0-9a-z]+):E(\{[^\n]*"digest":"AKAN_REDIRECT(?:;[^"]*)?"[^\n]*\})(\n?)$/;
+  let buffered: Uint8Array<ArrayBuffer> = new Uint8Array(0);
+
+  const concatBytes = (left: Uint8Array, right: Uint8Array): Uint8Array<ArrayBuffer> => {
+    const combined = new Uint8Array(left.byteLength + right.byteLength);
+    combined.set(left, 0);
+    combined.set(right, left.byteLength);
+    return combined;
+  };
+
+  const sanitizeRow = (row: Uint8Array): Uint8Array => {
+    let text: string;
+    try {
+      text = decoder.decode(row);
+    } catch {
+      return row;
+    }
+    const sanitized = (options.rewriteStylesheetHints ? text.replace(hlStylesheetRe, `$1"style"$2`) : text).replace(
+      redirectErrorRowRe,
+      "$1:null$3",
+    );
+    return sanitized === text ? row : encoder.encode(sanitized);
+  };
+
+  const enqueueCompleteRows = (chunk: Uint8Array, controller: TransformStreamDefaultController<Uint8Array>) => {
+    buffered = concatBytes(buffered, chunk);
+    let rowStart = 0;
+    for (let index = 0; index < buffered.byteLength; index += 1) {
+      if (buffered[index] !== 10) continue;
+      controller.enqueue(sanitizeRow(buffered.slice(rowStart, index + 1)));
+      rowStart = index + 1;
+    }
+    buffered = rowStart === 0 ? buffered : buffered.slice(rowStart);
+  };
+
+  return stream.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        enqueueCompleteRows(chunk, controller);
+      },
+      flush(controller) {
+        if (buffered.byteLength > 0) {
+          controller.enqueue(sanitizeRow(buffered));
+          buffered = new Uint8Array(0);
+        }
+      },
+    }),
+  );
+}
+
+export function sanitizeFlightForClientStream(stream: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+  return sanitizeFlightRows(stream, { rewriteStylesheetHints: true });
+}
+
+type StderrWrite = typeof process.stderr.write;
+
+export class ExpectedLateRedirectStderrSuppressor {
+  static #active = new Set<ExpectedLateRedirectStderrSuppressor>();
+  static #originalWrite: StderrWrite | null = null;
+  static #buffer = "";
+  static #flushTimer: ReturnType<typeof setTimeout> | null = null;
+  static #suppressingBenignBlock = false;
+  static readonly #maxBufferLength = 64 * 1024;
+  #stopped = false;
+  #lateRedirect = false;
+  #lateControlSettled = false;
+
+  private constructor(lateControl: Promise<SsrLateRedirect | null>) {
+    lateControl
+      .then((control) => {
+        this.#lateRedirect = control?.type === "redirect";
+      })
+      .catch(() => {
+        this.#lateRedirect = false;
+      })
+      .finally(() => {
+        this.#lateControlSettled = true;
+        ExpectedLateRedirectStderrSuppressor.#tryResolveBufferedOutput();
+      });
+  }
+
+  static start(lateControl?: Promise<SsrLateRedirect | null>): ExpectedLateRedirectStderrSuppressor | null {
+    if (!lateControl) return null;
+    // This is a process-wide stderr hook, so keep it out of production unless
+    // explicitly requested for diagnosis.
+    if (process.env.NODE_ENV === "production" && process.env.AKAN_SUPPRESS_LATE_REDIRECT_STDERR !== "1") return null;
+    const suppressor = new ExpectedLateRedirectStderrSuppressor(lateControl);
+    ExpectedLateRedirectStderrSuppressor.#active.add(suppressor);
+    ExpectedLateRedirectStderrSuppressor.#install();
+    return suppressor;
+  }
+
+  stop(): void {
+    if (this.#stopped) return;
+    this.#stopped = true;
+    ExpectedLateRedirectStderrSuppressor.#active.delete(this);
+    ExpectedLateRedirectStderrSuppressor.#tryResolveBufferedOutput();
+    if (ExpectedLateRedirectStderrSuppressor.#active.size === 0) ExpectedLateRedirectStderrSuppressor.#uninstall();
+  }
+
+  static #install(): void {
+    if (ExpectedLateRedirectStderrSuppressor.#originalWrite) return;
+    ExpectedLateRedirectStderrSuppressor.#originalWrite = process.stderr.write;
+    process.stderr.write = ((chunk: unknown, ...args: unknown[]) => {
+      ExpectedLateRedirectStderrSuppressor.#write(chunk, args);
+      return true;
+    }) as StderrWrite;
+  }
+
+  static #uninstall(): void {
+    ExpectedLateRedirectStderrSuppressor.#flushBufferedOutput();
+    if (!ExpectedLateRedirectStderrSuppressor.#originalWrite) return;
+    process.stderr.write = ExpectedLateRedirectStderrSuppressor.#originalWrite;
+    ExpectedLateRedirectStderrSuppressor.#originalWrite = null;
+  }
+
+  static #write(chunk: unknown, args: unknown[]): void {
+    const text =
+      typeof chunk === "string" ? chunk : chunk instanceof Uint8Array ? Buffer.from(chunk).toString() : String(chunk);
+    ExpectedLateRedirectStderrSuppressor.#buffer += text;
+    const callback = args.find((arg): arg is () => void => typeof arg === "function");
+    callback?.();
+
+    if (ExpectedLateRedirectStderrSuppressor.#buffer.length > ExpectedLateRedirectStderrSuppressor.#maxBufferLength) {
+      ExpectedLateRedirectStderrSuppressor.#flushBufferedOutput();
+      return;
+    }
+    ExpectedLateRedirectStderrSuppressor.#tryResolveBufferedOutput();
+  }
+
+  static #tryResolveBufferedOutput(): void {
+    if (!ExpectedLateRedirectStderrSuppressor.#buffer) return;
+    const hasBenignClose = ExpectedLateRedirectStderrSuppressor.#isBenignRsdwConnectionClose(
+      ExpectedLateRedirectStderrSuppressor.#buffer,
+    );
+    if (hasBenignClose && ExpectedLateRedirectStderrSuppressor.#hasLateRedirectOrPending()) {
+      if (!ExpectedLateRedirectStderrSuppressor.#hasLateRedirect()) {
+        ExpectedLateRedirectStderrSuppressor.#scheduleFlush();
+        return;
+      }
+      ExpectedLateRedirectStderrSuppressor.#suppressingBenignBlock = true;
+    }
+
+    if (ExpectedLateRedirectStderrSuppressor.#suppressingBenignBlock) {
+      if (ExpectedLateRedirectStderrSuppressor.#buffer.includes("\n\n")) {
+        ExpectedLateRedirectStderrSuppressor.#clearBufferedOutput();
+        ExpectedLateRedirectStderrSuppressor.#suppressingBenignBlock = false;
+      }
+      return;
+    }
+
+    ExpectedLateRedirectStderrSuppressor.#scheduleFlush();
+  }
+
+  static #scheduleFlush(): void {
+    if (ExpectedLateRedirectStderrSuppressor.#flushTimer) return;
+    ExpectedLateRedirectStderrSuppressor.#flushTimer = setTimeout(() => {
+      ExpectedLateRedirectStderrSuppressor.#flushTimer = null;
+      if (
+        ExpectedLateRedirectStderrSuppressor.#isBenignRsdwConnectionClose(
+          ExpectedLateRedirectStderrSuppressor.#buffer,
+        ) &&
+        ExpectedLateRedirectStderrSuppressor.#hasLateRedirect()
+      ) {
+        ExpectedLateRedirectStderrSuppressor.#clearBufferedOutput();
+        return;
+      }
+      ExpectedLateRedirectStderrSuppressor.#flushBufferedOutput();
+    }, 25);
+  }
+
+  static #flushBufferedOutput(): void {
+    if (!ExpectedLateRedirectStderrSuppressor.#buffer) return;
+    const text = ExpectedLateRedirectStderrSuppressor.#buffer;
+    ExpectedLateRedirectStderrSuppressor.#clearBufferedOutput();
+    ExpectedLateRedirectStderrSuppressor.#originalWrite?.call(process.stderr, text);
+  }
+
+  static #clearBufferedOutput(): void {
+    ExpectedLateRedirectStderrSuppressor.#buffer = "";
+    if (ExpectedLateRedirectStderrSuppressor.#flushTimer) {
+      clearTimeout(ExpectedLateRedirectStderrSuppressor.#flushTimer);
+      ExpectedLateRedirectStderrSuppressor.#flushTimer = null;
+    }
+  }
+
+  static #isBenignRsdwConnectionClose(text: string): boolean {
+    return (
+      text.includes("Connection closed.") &&
+      (text.includes("react-server-dom-webpack-client.node") || text.includes("reportGlobalError"))
+    );
+  }
+
+  static #hasLateRedirect(): boolean {
+    return [...ExpectedLateRedirectStderrSuppressor.#active].some((suppressor) => suppressor.#lateRedirect);
+  }
+
+  static #hasLateRedirectOrPending(): boolean {
+    return [...ExpectedLateRedirectStderrSuppressor.#active].some(
+      (suppressor) => suppressor.#lateRedirect || !suppressor.#lateControlSettled,
+    );
+  }
+}
+
+export function interleaveRscScriptsWithHtml(
+  htmlStream: ReadableStream<Uint8Array>,
+  rscClientStream: ReadableStream<Uint8Array>,
+  options: {
+    bootstrapModuleScripts?: string;
+    lateControl?: Promise<SsrLateRedirect | null>;
+    maxPendingRscScripts?: number;
+    onPendingRscScriptsSize?: (size: number) => void;
+    onComplete?: () => void;
+    onCancel?: (reason?: unknown) => void;
+    request?: Request;
+    requestStore?: AkanRequestStore;
+  } = {},
+): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const bootstrapDetector = new InlineBootstrapDetector();
+  const pendingRscScripts: Uint8Array[] = [];
+  const pendingControlScripts: Uint8Array[] = [];
+  const maxPendingRscScripts = SsrFromRscRendererConfig.maxPendingInlineRscScripts(options.maxPendingRscScripts);
+  const queueDrainResolvers: Array<() => void> = [];
+  const scriptAvailableResolvers: Array<() => void> = [];
+  let errored = false;
+  let rscDone = false;
+  let lateControlDone = !options.lateControl;
+  let htmlReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  let rscReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  let cancelled = false;
+
+  const cancelUpstream = (reason?: unknown) => {
+    if (cancelled) return;
+    cancelled = true;
+    while (queueDrainResolvers.length > 0) queueDrainResolvers.shift()?.();
+    while (scriptAvailableResolvers.length > 0) scriptAvailableResolvers.shift()?.();
+    if (htmlReader) void htmlReader.cancel(reason).catch(() => {});
+    if (rscReader) void rscReader.cancel(reason).catch(() => {});
+    options.onCancel?.(reason);
+  };
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      const fail = (err: unknown) => {
+        if (errored) return;
+        errored = true;
+        cancelUpstream(err);
+        controller.error(err);
+      };
+
+      const flushPendingRscScripts = () => {
+        if (!bootstrapDetector.canFlushInlineScripts) return;
+        while (!errored && pendingControlScripts.length > 0) {
+          const script = pendingControlScripts.shift();
+          if (script) controller.enqueue(script);
+        }
+        while (!errored && pendingRscScripts.length > 0) {
+          const script = pendingRscScripts.shift();
+          if (script) controller.enqueue(script);
+        }
+        options.onPendingRscScriptsSize?.(pendingRscScripts.length);
+        while (queueDrainResolvers.length > 0) queueDrainResolvers.shift()?.();
+      };
+
+      const notifyScriptAvailable = () => {
+        while (scriptAvailableResolvers.length > 0) scriptAvailableResolvers.shift()?.();
+      };
+
+      const waitForRscQueueDrain = async () => {
+        while (!errored && pendingRscScripts.length >= maxPendingRscScripts) {
+          await new Promise<void>((resolve) => queueDrainResolvers.push(resolve));
+        }
+      };
+
+      const waitForScriptAvailable = () => new Promise<void>((resolve) => scriptAvailableResolvers.push(resolve));
+
+      const pumpRscScripts = async () => {
+        rscReader = rscClientStream.getReader();
+        try {
+          while (true) {
+            const { value, done } = await rscReader.read();
+            if (done || errored) break;
+            await waitForRscQueueDrain();
+            if (errored) break;
+            pendingRscScripts.push(encoder.encode(createInlineRscScript(value)));
+            options.onPendingRscScriptsSize?.(pendingRscScripts.length);
+            notifyScriptAvailable();
+          }
+        } finally {
+          rscDone = true;
+          notifyScriptAvailable();
+          rscReader.releaseLock();
+          rscReader = null;
+        }
+      };
+
+      const pump = async () => {
+        const rscPump = pumpRscScripts();
+        const lateControlPump = options.lateControl?.then((control) => {
+          try {
+            if (!control || errored) return;
+            pendingControlScripts.push(encoder.encode(createSoftRedirectScript(control)));
+            notifyScriptAvailable();
+          } finally {
+            lateControlDone = true;
+            notifyScriptAvailable();
+          }
+        });
+        if (!lateControlPump) lateControlDone = true;
+        void rscPump.catch(fail);
+        void lateControlPump?.catch(fail);
+
+        htmlReader = htmlStream.getReader();
+        try {
+          while (true) {
+            const { value, done } = await htmlReader.read();
+            if (done || errored) break;
+            controller.enqueue(value);
+            bootstrapDetector.observe(value);
+            flushPendingRscScripts();
+          }
+        } finally {
+          htmlReader.releaseLock();
+          htmlReader = null;
+        }
+
+        if (errored) return;
+        if (options.bootstrapModuleScripts) controller.enqueue(encoder.encode(options.bootstrapModuleScripts));
+        bootstrapDetector.forceAllow();
+        while (
+          !errored &&
+          (!rscDone || !lateControlDone || pendingControlScripts.length > 0 || pendingRscScripts.length > 0)
+        ) {
+          flushPendingRscScripts();
+          if (!rscDone || !lateControlDone) await waitForScriptAvailable();
+        }
+        await Promise.all([rscPump, lateControlPump]);
+        if (errored) return;
+        flushPendingRscScripts();
+        controller.enqueue(encoder.encode(`<script>self.__RSC_CLOSE__()</script>`));
+        controller.close();
+      };
+
+      const runPump = () => {
+        const requestContext = options.requestStore ?? options.request;
+        const cleanup = requestContext ? pushRequestFallback(requestContext) : undefined;
+        return pump()
+          .catch(fail)
+          .finally(() => {
+            cleanup?.();
+            options.onComplete?.();
+          });
+      };
+      const requestContext = options.requestStore ?? options.request;
+      if (requestContext && requestStorage) void requestStorage.run(requestContext, runPump);
+      else void runPump();
+    },
+    cancel(reason) {
+      errored = true;
+      cancelUpstream(reason);
+      options.onComplete?.();
+    },
+  });
+}
+
+class SsrFromRscRendererConfig {
+  static maxPendingInlineRscScripts(explicit?: number): number {
+    if (explicit !== undefined && Number.isFinite(explicit) && explicit > 0) return Math.floor(explicit);
+    const parsed = Number.parseInt(process.env.AKAN_MAX_PENDING_INLINE_RSC_SCRIPTS ?? "", 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_PENDING_INLINE_RSC_SCRIPTS;
+  }
+}
+
+class InlineBootstrapDetector {
+  readonly #decoder = new TextDecoder();
+  #buffer = "";
+  #bootstrapSeen = false;
+  #canFlushInlineScripts = false;
+
+  get canFlushInlineScripts(): boolean {
+    return this.#canFlushInlineScripts;
+  }
+
+  observe(chunk: Uint8Array): void {
+    if (this.#canFlushInlineScripts) return;
+    this.#buffer = `${this.#buffer}${this.#decoder.decode(chunk, { stream: true })}`.slice(-8192);
+    if (!this.#bootstrapSeen) {
+      const bootstrapIndex = this.#buffer.indexOf("__RSC_PUSH__");
+      if (bootstrapIndex === -1) return;
+      this.#bootstrapSeen = true;
+      this.#buffer = this.#buffer.slice(bootstrapIndex);
+    }
+    if (this.#buffer.toLowerCase().includes("</script>")) this.#canFlushInlineScripts = true;
+  }
+
+  forceAllow(): void {
+    this.#canFlushInlineScripts = true;
+  }
+}
+
 export class SsrFromRscRenderer {
   static readonly #chunkRegistryStats: SsrChunkRegistryStats = {
     ssrChunkRegistrySize: 0,
@@ -166,8 +585,12 @@ export class SsrFromRscRenderer {
     // other is relayed to the client as inline <script> tags for hydration.
     const [rscForSsr, rscForClient] = input.rscStream.tee();
 
-    const ssrNodeStream = Readable.fromWeb(rscForSsr as never);
-    const thenable = createFromNodeStream(ssrNodeStream, input.ssrManifest) as Promise<ReactNode>;
+    const ssrNodeStream = Readable.fromWeb(sanitizeFlightRows(rscForSsr) as never);
+    const stderrSuppressor = ExpectedLateRedirectStderrSuppressor.start(input.lateControl);
+    const thenable = SsrFromRscRenderer.#suppressExpectedLateRedirectError(
+      createFromNodeStream(ssrNodeStream, input.ssrManifest),
+      input.lateControl,
+    );
 
     function Root(): ReactNode {
       return use(thenable);
@@ -181,8 +604,9 @@ export class SsrFromRscRenderer {
       renderToReadableStream(<Root />, {
         bootstrapScriptContent: bootstrap,
       });
+    const requestContext = input.requestStore ?? input.request;
     const htmlStream =
-      input.request && requestStorage ? await requestStorage.run(input.request, renderHtml) : await renderHtml();
+      requestContext && requestStorage ? await requestStorage.run(requestContext, renderHtml) : await renderHtml();
 
     const withHeadScripts = SsrFromRscRenderer.#injectHeadScriptsIntoHead(htmlStream, {
       importmap: input.importmap,
@@ -196,6 +620,10 @@ export class SsrFromRscRenderer {
       SsrFromRscRenderer.#sanitizeFlightForClient(rscForClient),
       input.bootstrapModules,
       input.request,
+      input.requestStore,
+      input.lateControl,
+      () => stderrSuppressor?.stop(),
+      input.onCancel,
     );
   }
 
@@ -241,6 +669,24 @@ export class SsrFromRscRenderer {
       }
       return mod;
     };
+  }
+
+  static #suppressExpectedLateRedirectError(
+    thenable: PromiseLike<ReactNode>,
+    lateControl?: Promise<SsrLateRedirect | null>,
+  ): Promise<ReactNode> {
+    const promise = Promise.resolve(thenable);
+    if (!lateControl) return promise;
+    return promise.catch(async (error) => {
+      const control = await lateControl;
+      if (control?.type === "redirect" && SsrFromRscRenderer.#isExpectedLateRedirectError(error)) return null;
+      throw error;
+    });
+  }
+
+  static #isExpectedLateRedirectError(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+    return error.message === "Connection closed." || error.name === "AkanRedirectError";
   }
 
   static #getSsrChunkRegistryMaxEntries(): number {
@@ -357,28 +803,7 @@ export class SsrFromRscRenderer {
   // the browser-bound stream to use the spec-correct `"style"`; the SSR-bound
   // tee is left untouched so we don't alter React's server behavior.
   static #sanitizeFlightForClient(stream: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
-    const decoder = new TextDecoder();
-    const encoder = new TextEncoder();
-    // Matches just the trailing `,"stylesheet"]` of an HL hint line. The href is
-    // left alone; only the `as` slot is rewritten.
-    const hlStylesheetRe = /(:HL\["[^"\\]*(?:\\.[^"\\]*)*",)"stylesheet"(\])/g;
-
-    return stream.pipeThrough(
-      new TransformStream<Uint8Array, Uint8Array>({
-        transform(chunk, controller) {
-          const text = decoder.decode(chunk, { stream: true });
-          if (!text.includes(`"stylesheet"`)) {
-            controller.enqueue(chunk);
-            return;
-          }
-          controller.enqueue(encoder.encode(text.replace(hlStylesheetRe, `$1"style"$2`)));
-        },
-        flush(controller) {
-          const tail = decoder.decode();
-          if (tail) controller.enqueue(encoder.encode(tail));
-        },
-      }),
-    );
+    return sanitizeFlightForClientStream(stream);
   }
 
   static #appendRscScriptsAfterHtml(
@@ -386,65 +811,25 @@ export class SsrFromRscRenderer {
     rscClientStream: ReadableStream<Uint8Array>,
     bootstrapModules?: string[],
     request?: Request,
+    requestStore?: AkanRequestStore,
+    lateControl?: Promise<SsrLateRedirect | null>,
+    onComplete?: () => void,
+    onCancel?: (reason?: unknown) => void,
   ): ReadableStream<Uint8Array> {
-    const encoder = new TextEncoder();
     const bootstrapModuleScripts = SsrFromRscRenderer.#createBootstrapModuleScriptTags(bootstrapModules);
-
-    return new ReadableStream<Uint8Array>({
-      start(controller) {
-        let errored = false;
-        const fail = (err: unknown) => {
-          if (errored) return;
-          errored = true;
-          controller.error(err);
-        };
-
-        const pump = async () => {
-          const reader = htmlStream.getReader();
-          try {
-            while (true) {
-              const { value, done } = await reader.read();
-              if (done) break;
-              if (errored) return;
-              controller.enqueue(value);
-            }
-          } finally {
-            reader.releaseLock();
-          }
-
-          // Do not let React emit async bootstrap module scripts in the middle
-          // of the Fizz stream. Cached modules can otherwise execute before
-          // `$RC(...)` restores streamed Suspense segments into the DOM.
-          if (bootstrapModuleScripts && !errored) controller.enqueue(encoder.encode(bootstrapModuleScripts));
-
-          // Inline RSC scripts must not be interleaved with arbitrary HTML bytes:
-          // Fizz may split inside SVG path data or attributes, corrupting markup.
-          const rscReader = rscClientStream.getReader();
-          try {
-            while (true) {
-              const { value, done } = await rscReader.read();
-              if (done) break;
-              if (errored) return;
-              controller.enqueue(encoder.encode(createInlineRscScript(value)));
-            }
-          } finally {
-            rscReader.releaseLock();
-          }
-          if (!errored) {
-            controller.enqueue(encoder.encode(`<script>self.__RSC_CLOSE__()</script>`));
-            controller.close();
-          }
-        };
-
-        const runPump = () => {
-          const cleanup = request ? pushRequestFallback(request) : undefined;
-          return pump()
-            .catch(fail)
-            .finally(() => cleanup?.());
-        };
-        if (request && requestStorage) void requestStorage.run(request, runPump);
-        else void runPump();
-      },
+    // Interleave only at HTML chunk boundaries. Fizz may split arbitrary bytes
+    // inside SVG paths or attributes, so we never splice scripts into a chunk.
+    //
+    // Do not let React emit async bootstrap module scripts in the middle of the
+    // Fizz stream. Cached modules can otherwise execute before `$RC(...)`
+    // restores streamed Suspense segments into the DOM.
+    return interleaveRscScriptsWithHtml(htmlStream, rscClientStream, {
+      bootstrapModuleScripts,
+      lateControl,
+      onComplete,
+      onCancel,
+      request,
+      requestStore,
     });
   }
 }

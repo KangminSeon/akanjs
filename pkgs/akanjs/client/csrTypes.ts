@@ -7,7 +7,7 @@ import type { RouterInstance } from "./router";
 import type { ReactFont } from "./types";
 
 export type TransitionType = "none" | "fade" | "bottomUp" | "stack" | "scaleOut";
-/** Per-page CSR configuration for transition, safe-area, gesture, and cache behavior. */
+/** Per-page CSR configuration for transition, safe-area, and gesture behavior. */
 export interface PageConfig {
   transition?: TransitionType;
   safeArea?: boolean | "top" | "bottom";
@@ -18,8 +18,6 @@ export interface PageConfig {
   bottomInset?: boolean | number;
   gesture?: boolean;
   cache?: boolean;
-  rscCache?: "public" | false;
-  rscCacheTtl?: number;
   topSafeAreaColor?: string;
   bottomSafeAreaColor?: string;
 }
@@ -60,7 +58,12 @@ export interface LayoutErrorProps extends LayoutNotFoundProps {
 }
 export type Head = ReactNode;
 export type GenerateHead = (props: PageProps) => PromiseOrObject<Head | null | undefined>;
-export type ResolveHead = (props: PageProps) => PromiseOrObject<Head | null | undefined>;
+export interface ResolvedHead {
+  node: Head | null | undefined;
+  hasExplicitLanguageAlternates: boolean;
+}
+export type ResolveHeadResult = Head | ResolvedHead | null | undefined;
+export type ResolveHead = (props: PageProps) => PromiseOrObject<ResolveHeadResult>;
 export type HeadProps = PageProps;
 export type PageRender = (props: PageProps) => PromiseOrObject<ReactNode>;
 export type LayoutRender = (props: LayoutProps) => PromiseOrObject<ReactNode>;
@@ -104,17 +107,45 @@ export interface WebAppManifest {
   screenshots?: WebAppManifestIcon[];
   [key: string]: unknown;
 }
+export interface AkanMetadata {
+  title?: string;
+  description?: string;
+  robots?: string;
+  openGraph?: {
+    title?: string;
+    description?: string;
+    type?: string;
+    url?: string;
+    siteName?: string;
+    images?: string | string[];
+  };
+  twitter?: {
+    card?: "summary" | "summary_large_image" | "app" | "player" | (string & {});
+    title?: string;
+    description?: string;
+    images?: string | string[];
+  };
+  alternates?: {
+    canonical?: string;
+    languages?: Record<string, string>;
+  };
+}
+export type GenerateMetadata = (props: PageProps) => PromiseOrObject<AkanMetadata | null | undefined>;
 export interface PageModule {
   default?: PageRender;
   pageConfig?: PageConfig;
   head?: Head;
+  metadata?: AkanMetadata;
   generateHead?: GenerateHead;
+  generateMetadata?: GenerateMetadata;
   Loading?: PageLoadingRender;
 }
 export interface LayoutModule {
   default?: LayoutRender;
   head?: Head;
+  metadata?: AkanMetadata;
   generateHead?: GenerateHead;
+  generateMetadata?: GenerateMetadata;
   fonts?: ReactFont[];
   manifest?: WebAppManifest;
   theme?: string;
@@ -140,7 +171,7 @@ export interface Route {
   // Layout?:
   //   | (({ children, params, searchParams }: LayoutProps) => ReactNode)
   //   | (({ children, params, searchParams }: LayoutProps) => Promise<ReactNode>);
-  loader?: () => any;
+  loader?: () => unknown;
   pageState?: PageState;
   // action?: any;
   // ErrorBoundary?: any;
@@ -235,7 +266,7 @@ export interface RouteState {
 }
 
 export type UseCsrTransition = CsrTransitionStyles & {
-  pageBind: (...args: any[]) => ReactDOMAttributes;
+  pageBind: (...args: unknown[]) => ReactDOMAttributes;
   pageClassName: string;
   transDirection: "vertical" | "horizontal" | "none";
   transUnitRange: number[];
