@@ -1,5 +1,20 @@
 import { describe, expect, test } from "bun:test";
+import { LruTtlCache } from "./cachePolicy";
 import { shouldRenderLocaleAlternates } from "./metadata";
+import type { AkanRouterStateV1, AkanRscPatchMetadata } from "./routeState";
+import {
+  type CachedRscResult,
+  createCachedRscPatchMetadata,
+  createRscPatchCacheEntry,
+  createRscWorkerCachedPatchReplayDecision,
+  invalidateCachedRscResults,
+  isCachedRscPatchMetadataCompatible,
+  isRscPatchResultCacheEligible,
+  resolveRscWorkerPatchCacheEntry,
+  shouldCollectRscWorkerRenderChunks,
+  shouldStoreRscWorkerPatchResult,
+  shouldUseRscWorkerFullResultCache,
+} from "./rscWorkerCache";
 import {
   createIdempotentRscRenderCancel,
   createRscHostRenderStream,
@@ -12,6 +27,31 @@ import {
 import { type CachedRscReplayMessage, replayCachedRscResult } from "./rscWorkerReplay";
 
 const decoder = new TextDecoder();
+
+function makePatchRouterState(input: { buildId?: number; href?: string; routeId?: string } = {}): AkanRouterStateV1 {
+  return {
+    version: 1,
+    buildId: input.buildId ?? 7,
+    href: input.href ?? "https://example.test/docs?page=1",
+    routeId: input.routeId ?? "/docs",
+    segments: [
+      { kind: "root-layout", path: "/", key: "root:/:0" },
+      { kind: "layout", path: "/docs", key: "layout:/docs:1" },
+      { kind: "page", path: "/docs", key: "page:/docs:2" },
+    ],
+  };
+}
+
+function makeHeadSafePatch(input: Partial<AkanRscPatchMetadata> = {}): AkanRscPatchMetadata {
+  return {
+    patchStartIndex: 2,
+    patchStartSegmentKey: "page:/docs:2",
+    segmentPath: ["root:/:0", "layout:/docs:1", "page:/docs:2"],
+    headSafe: true,
+    headSnapshot: { version: 1, nodes: [{ tag: "title", text: "Docs" }] },
+    ...input,
+  };
+}
 
 function createHostRenderHarness(options: { maxPendingChunks?: number; signal?: AbortSignal } = {}) {
   let pending: RscPending | undefined;
@@ -205,6 +245,30 @@ describe("RscWorker host render stream", () => {
       status: 308,
     });
   });
+
+  test("preserves worker cache state that arrives before stream end", async () => {
+    const harness = createHostRenderHarness();
+
+    harness.pending().onMeta?.({});
+    const result = await harness.result;
+    expect(result.type).toBe("stream");
+    if (result.type !== "stream") throw new Error("expected stream result");
+
+    harness.pending().onCacheState?.({
+      cacheable: true,
+      revalidate: 15,
+      dynamicUsage: { headers: false, cookies: false },
+    });
+    harness.pending().onChunk(new TextEncoder().encode("flight"));
+    harness.pending().onEnd();
+
+    expect(await new Response(result.stream).text()).toBe("flight");
+    await expect(result.cacheState).resolves.toEqual({
+      cacheable: true,
+      revalidate: 15,
+      dynamicUsage: { headers: false, cookies: false },
+    });
+  });
 });
 
 describe("RscWorker render cancellation", () => {
@@ -228,6 +292,283 @@ describe("RscWorker cache invalidation", () => {
   test("creates an invalidate-cache worker message with optional reason", () => {
     expect(createRscWorkerInvalidateCacheMessage()).toEqual({ type: "invalidate-cache" });
     expect(createRscWorkerInvalidateCacheMessage("manual")).toEqual({ type: "invalidate-cache", reason: "manual" });
+    expect(createRscWorkerInvalidateCacheMessage({ tags: ["docs"], paths: ["/docs"], reason: "tagged" })).toEqual({
+      type: "invalidate-cache",
+      reason: "tagged",
+      tags: ["docs"],
+      paths: ["/docs"],
+    });
+  });
+
+  test("creates patch cache keys that distinguish route and patch variants", () => {
+    const routerState: AkanRouterStateV1 = {
+      version: 1,
+      buildId: 7,
+      href: "https://example.test/docs?page=1",
+      routeId: "/docs",
+      segments: [
+        { kind: "root-layout", path: "/", key: "root:/:0" },
+        { kind: "layout", path: "/docs", key: "layout:/docs:1" },
+        { kind: "page", path: "/docs", key: "page:/docs:2" },
+      ],
+    };
+    const patch: AkanRscPatchMetadata = {
+      patchStartIndex: 2,
+      patchStartSegmentKey: "page:/docs:2",
+      segmentPath: ["root:/:0", "layout:/docs:1", "page:/docs:2"],
+      headSafe: true,
+      headSnapshot: { version: 1, nodes: [{ tag: "title", text: "Docs" }] },
+    };
+    const baseEntry = { key: "https://example.test\n\n\n\n/docs\n?page=1\n\ndark", ttl: 30 };
+
+    const entry = createRscPatchCacheEntry({ baseEntry, targetRouterState: routerState, patch });
+    expect(entry.ttl).toBe(30);
+    expect(entry.key).toBe(createRscPatchCacheEntry({ baseEntry, targetRouterState: routerState, patch }).key);
+    expect(
+      createRscPatchCacheEntry({
+        baseEntry,
+        targetRouterState: { ...routerState, buildId: 8 },
+        patch,
+      }).key,
+    ).not.toBe(entry.key);
+    expect(
+      createRscPatchCacheEntry({
+        baseEntry: { ...baseEntry, key: baseEntry.key.replace("?page=1", "?page=2") },
+        targetRouterState: { ...routerState, href: "https://example.test/docs?page=2" },
+        patch,
+      }).key,
+    ).not.toBe(entry.key);
+    expect(
+      createRscPatchCacheEntry({
+        baseEntry,
+        targetRouterState: routerState,
+        patch: { ...patch, segmentPath: ["root:/:0", "page:/docs:1"], patchStartSegmentKey: "page:/docs:1" },
+      }).key,
+    ).not.toBe(entry.key);
+    expect(
+      createRscPatchCacheEntry({
+        baseEntry,
+        targetRouterState: routerState,
+        patch: { ...patch, headSafe: false },
+      }).key,
+    ).not.toBe(entry.key);
+  });
+
+  test("requires the partial commit guard and head-safe metadata for patch result caching", () => {
+    const patch = makeHeadSafePatch();
+
+    expect(isRscPatchResultCacheEligible({ partialCommitEnabled: true, patch })).toBe(true);
+    expect(isRscPatchResultCacheEligible({ partialCommitEnabled: false, patch })).toBe(false);
+    expect(isRscPatchResultCacheEligible({ partialCommitEnabled: true, patch: { ...patch, headSafe: false } })).toBe(
+      false,
+    );
+    const { headSnapshot: _headSnapshot, ...missingHeadPatch } = patch;
+    expect(isRscPatchResultCacheEligible({ partialCommitEnabled: true, patch: missingHeadPatch })).toBe(false);
+    expect(
+      isRscPatchResultCacheEligible({
+        partialCommitEnabled: true,
+        patch: { ...patch, headSnapshotFailure: "head-invalid" },
+      }),
+    ).toBe(false);
+  });
+
+  test("uses the worker patch cache path before full result cache for eligible patch decisions", () => {
+    const cacheEntry = { key: "full-key", ttl: 30 };
+    const targetRouterState = makePatchRouterState();
+    const patch = makeHeadSafePatch();
+    const patchDecision = {
+      status: "patch" as const,
+      reason: "same-route-search-params",
+      commonPrefixLength: 3,
+      patch,
+    };
+
+    const patchCacheEntry = resolveRscWorkerPatchCacheEntry({
+      cacheEntry,
+      targetRouterState,
+      safePatchDecision: patchDecision,
+      partialCommitEnabled: true,
+    });
+
+    expect(patchCacheEntry).toEqual(createRscPatchCacheEntry({ baseEntry: cacheEntry, targetRouterState, patch }));
+    expect(shouldUseRscWorkerFullResultCache({ cacheEntry, patchCacheEntry })).toBe(false);
+    expect(
+      shouldCollectRscWorkerRenderChunks({
+        cacheEntry,
+        effectivePatchDecision: patchDecision,
+        patchCacheEntry,
+      }),
+    ).toBe(true);
+    expect(
+      shouldStoreRscWorkerPatchResult({
+        cacheEntry,
+        patchCacheEntry,
+        effectivePatchDecision: patchDecision,
+        storeTtl: 30,
+      }),
+    ).toBe(true);
+  });
+
+  test("falls back to the worker full result cache path when patch caching is not eligible", () => {
+    const cacheEntry = { key: "full-key", ttl: 30 };
+    const targetRouterState = makePatchRouterState();
+    const patchDecision = {
+      status: "patch" as const,
+      reason: "same-route-search-params",
+      commonPrefixLength: 3,
+      patch: makeHeadSafePatch(),
+    };
+
+    const guardOffPatchEntry = resolveRscWorkerPatchCacheEntry({
+      cacheEntry,
+      targetRouterState,
+      safePatchDecision: patchDecision,
+      partialCommitEnabled: false,
+    });
+    expect(guardOffPatchEntry).toBeNull();
+    expect(shouldUseRscWorkerFullResultCache({ cacheEntry, patchCacheEntry: guardOffPatchEntry })).toBe(true);
+    expect(
+      shouldCollectRscWorkerRenderChunks({
+        cacheEntry,
+        effectivePatchDecision: patchDecision,
+        patchCacheEntry: guardOffPatchEntry,
+      }),
+    ).toBe(false);
+    expect(
+      shouldStoreRscWorkerPatchResult({
+        cacheEntry,
+        patchCacheEntry: guardOffPatchEntry,
+        effectivePatchDecision: patchDecision,
+        storeTtl: 30,
+      }),
+    ).toBe(false);
+
+    const fullDecision = { status: "full" as const, reason: "guard-disabled", commonPrefixLength: 3 };
+    expect(
+      resolveRscWorkerPatchCacheEntry({
+        cacheEntry,
+        targetRouterState,
+        safePatchDecision: fullDecision,
+        partialCommitEnabled: true,
+      }),
+    ).toBeNull();
+    expect(
+      shouldCollectRscWorkerRenderChunks({
+        cacheEntry,
+        effectivePatchDecision: fullDecision,
+        patchCacheEntry: null,
+      }),
+    ).toBe(true);
+  });
+
+  test("stores target route state and patch metadata in cached patch values", () => {
+    const targetRouterState = makePatchRouterState();
+    const patch = makeHeadSafePatch();
+    const cacheValue: CachedRscResult = {
+      chunks: [new Uint8Array([1])],
+      bytes: 1,
+      chunksCount: 1,
+      pathname: "/docs",
+      routeId: "/docs",
+      tags: ["docs"],
+      cacheState: { cacheable: true, routeId: "/docs", tags: ["docs"] },
+      patch: createCachedRscPatchMetadata({ targetRouterState, patch }),
+    };
+
+    expect(cacheValue.patch).toEqual({ targetRouterState, patch });
+    expect(cacheValue.patch?.patch.headSnapshot).toEqual(patch.headSnapshot);
+  });
+
+  test("uses cached patch metadata as the replay decision source", () => {
+    const targetRouterState = makePatchRouterState();
+    const cachedPatch = makeHeadSafePatch({
+      headSnapshot: { version: 1, nodes: [{ tag: "title", text: "Cached" }] },
+    });
+    const freshPatch = makeHeadSafePatch({
+      headSnapshot: { version: 1, nodes: [{ tag: "title", text: "Fresh" }] },
+    });
+    const safePatchDecision = {
+      status: "patch" as const,
+      reason: "same-route-search-params",
+      commonPrefixLength: 3,
+      patch: freshPatch,
+    };
+    const cached = createCachedRscPatchMetadata({ targetRouterState, patch: cachedPatch });
+
+    expect(isCachedRscPatchMetadataCompatible({ cached, targetRouterState, safePatchDecision })).toBe(true);
+    expect(createRscWorkerCachedPatchReplayDecision({ cached, safePatchDecision }).patch?.headSnapshot).toEqual(
+      cachedPatch.headSnapshot,
+    );
+    expect(
+      isCachedRscPatchMetadataCompatible({
+        cached,
+        targetRouterState: { ...targetRouterState, href: "https://example.test/docs?page=2" },
+        safePatchDecision,
+      }),
+    ).toBe(false);
+  });
+
+  test("invalidates cached RSC results by tag and path scope", () => {
+    const makeResult = (pathname: string, tags: string[]): CachedRscResult => ({
+      chunks: [],
+      bytes: 0,
+      chunksCount: 0,
+      pathname,
+      routeId: pathname,
+      tags,
+      cacheState: { cacheable: true, routeId: pathname, tags },
+    });
+    const cache = new LruTtlCache<CachedRscResult>(10);
+    cache.set("docs", makeResult("/docs/intro", ["docs"]), 30);
+    cache.set("blog", makeResult("/blog/intro", ["blog"]), 30);
+    cache.set("api", makeResult("/api/reference", ["api"]), 30);
+
+    invalidateCachedRscResults(cache, { tags: ["docs"] });
+    expect(cache.get("docs")).toBeNull();
+    expect(cache.get("blog")?.pathname).toBe("/blog/intro");
+    expect(cache.get("api")?.pathname).toBe("/api/reference");
+
+    invalidateCachedRscResults(cache, { paths: ["/api"] });
+    expect(cache.get("api")).toBeNull();
+    expect(cache.get("blog")?.pathname).toBe("/blog/intro");
+
+    invalidateCachedRscResults(cache, { reason: "manual" });
+    expect(cache.get("blog")).toBeNull();
+  });
+
+  test("invalidates cached patch RSC results with the same route metadata policy", () => {
+    const cache = new LruTtlCache<CachedRscResult>(10);
+    cache.set(
+      "patch-docs",
+      {
+        chunks: [new Uint8Array([1])],
+        bytes: 1,
+        chunksCount: 1,
+        pathname: "/docs",
+        routeId: "/docs",
+        tags: ["docs"],
+        cacheState: { cacheable: true, routeId: "/docs", tags: ["docs"] },
+      },
+      30,
+    );
+    cache.set(
+      "patch-blog",
+      {
+        chunks: [new Uint8Array([2])],
+        bytes: 1,
+        chunksCount: 1,
+        pathname: "/blog",
+        routeId: "/blog",
+        tags: ["blog"],
+        cacheState: { cacheable: true, routeId: "/blog", tags: ["blog"] },
+      },
+      30,
+    );
+
+    invalidateCachedRscResults(cache, { tags: ["docs"] });
+
+    expect(cache.get("patch-docs")).toBeNull();
+    expect(cache.get("patch-blog")?.pathname).toBe("/blog");
   });
 });
 
@@ -259,5 +600,77 @@ describe("RscWorker cached result replay", () => {
       state: { cacheable: true, revalidate: 30 },
     });
     expect(messages[2]).toEqual({ type: "chunk", requestId: "request-1", data: new Uint8Array([1]) });
+  });
+
+  test("forwards cached replay trace metadata in the meta message", async () => {
+    const messages: CachedRscReplayMessage[] = [];
+    const completed = await replayCachedRscResult({
+      requestId: "request-2",
+      chunks: [],
+      trace: {
+        navId: "9",
+        pathname: "/en/docs",
+        routeId: "/:lang/docs",
+        cache: "hit",
+        cacheKeyHash: "cache-key",
+      },
+      send: (message) => {
+        messages.push(message);
+      },
+      isCancelled: () => false,
+    });
+
+    expect(completed).toBe(true);
+    expect(messages[0]).toEqual({
+      type: "meta",
+      requestId: "request-2",
+      theme: undefined,
+      status: undefined,
+      trace: {
+        navId: "9",
+        pathname: "/en/docs",
+        routeId: "/:lang/docs",
+        cache: "hit",
+        cacheKeyHash: "cache-key",
+      },
+    });
+  });
+
+  test("keeps replay cache state separate from patch cache hit trace metadata", async () => {
+    const messages: CachedRscReplayMessage[] = [];
+    const cacheState = { cacheable: true, routeId: "/docs", tags: ["docs"], revalidate: 10 };
+    const completed = await replayCachedRscResult({
+      requestId: "request-3",
+      chunks: [],
+      cacheState,
+      trace: {
+        navId: "10",
+        pathname: "/docs",
+        routeId: "/docs",
+        cache: "hit",
+        cacheKeyHash: "patch-key",
+        partial: "patch",
+        partialReason: "cache-hit-patch-replay",
+        patchStartIndex: 2,
+        patchStartSegment: "page:/docs:2",
+      },
+      send: (message) => {
+        messages.push(message);
+      },
+      isCancelled: () => false,
+    });
+
+    expect(completed).toBe(true);
+    expect(messages[0]).toMatchObject({
+      type: "meta",
+      requestId: "request-3",
+      trace: {
+        cache: "hit",
+        cacheKeyHash: "patch-key",
+        partial: "patch",
+        partialReason: "cache-hit-patch-replay",
+      },
+    });
+    expect(messages[1]).toEqual({ type: "cache-state", requestId: "request-3", state: cacheState });
   });
 });

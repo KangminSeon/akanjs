@@ -7,6 +7,7 @@ import {
   interleaveRscScriptsWithHtml,
   SsrChunkRegistry,
   sanitizeFlightForClientStream,
+  sanitizeFlightForSsrStream,
 } from "./ssrFromRscRenderer";
 
 const encoder = new TextEncoder();
@@ -165,6 +166,17 @@ describe("inline RSC chunks", () => {
     expect(output).not.toContain("AKAN_REDIRECT");
   });
 
+  test("drops debug info rows only for the SSR decoder branch", async () => {
+    const raw = encoder.encode(['a:D{"time":1}\n', 'b:["$","main",null,{}]\n'].join(""));
+    const clientOutput = await new Response(sanitizeFlightForClientStream(byteStream([raw]))).text();
+    const ssrOutput = await new Response(
+      sanitizeFlightForSsrStream(byteStream([raw.slice(0, 5), raw.slice(5, 18), raw.slice(18)])),
+    ).text();
+
+    expect(clientOutput).toContain('a:D{"time":1}\n');
+    expect(ssrOutput).toBe('b:["$","main",null,{}]\n');
+  });
+
   test("preserves non-redirect error rows for React Flight error handling", async () => {
     const raw = [
       'nf:E{"digest":"AKAN_NOT_FOUND","name":"AkanNotFoundError","message":"Not Found"}\n',
@@ -177,7 +189,7 @@ describe("inline RSC chunks", () => {
 });
 
 describe("inline RSC interleaving", () => {
-  test("flushes ready RSC scripts between HTML chunks", async () => {
+  test("appends ready RSC scripts after complete HTML", async () => {
     const html = textStream([
       { text: `<main>one${rscBootstrap}`, delayMs: 5 },
       { text: "two</main>", delayMs: 20 },
@@ -190,8 +202,8 @@ describe("inline RSC interleaving", () => {
 
     expect(firstHtmlIndex).toBeGreaterThanOrEqual(0);
     expect(output.indexOf(rscBootstrap)).toBeGreaterThan(firstHtmlIndex);
-    expect(scriptIndex).toBeGreaterThan(firstHtmlIndex);
-    expect(secondHtmlIndex).toBeGreaterThan(scriptIndex);
+    expect(secondHtmlIndex).toBeGreaterThan(firstHtmlIndex);
+    expect(scriptIndex).toBeGreaterThan(secondHtmlIndex);
   });
 
   test("does not wait for delayed RSC chunks before flushing HTML", async () => {
@@ -274,7 +286,7 @@ describe("inline RSC interleaving", () => {
     expect(closeIndex).toBeGreaterThan(scriptIndex);
   });
 
-  test("emits late redirect as a soft redirect script at an HTML chunk boundary", async () => {
+  test("emits late redirect as a soft redirect script after complete HTML", async () => {
     const redirect = {
       type: "redirect" as const,
       location: "/login?next=%2Fdashboard",
@@ -296,8 +308,8 @@ describe("inline RSC interleaving", () => {
 
     expect(firstHtmlIndex).toBeGreaterThanOrEqual(0);
     expect(secondHtmlIndex).toBeGreaterThan(firstHtmlIndex);
-    expect(redirectIndex).toBeGreaterThan(secondHtmlIndex);
-    expect(thirdHtmlIndex).toBeGreaterThan(redirectIndex);
+    expect(thirdHtmlIndex).toBeGreaterThan(secondHtmlIndex);
+    expect(redirectIndex).toBeGreaterThan(thirdHtmlIndex);
     expect(output).toContain(createInlineRscScript(encoder.encode("flight")));
     expect(output).toContain("<script>self.__RSC_CLOSE__()</script>");
   });

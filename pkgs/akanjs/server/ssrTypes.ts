@@ -26,6 +26,24 @@ export interface SsrLateRedirect {
   status: 303 | 307 | 308;
 }
 
+export interface RscTraceMetadata {
+  navId?: string;
+  pathname: string;
+  routeId: string;
+  cache: "hit" | "miss" | "bypass";
+  cacheReason?: string;
+  cacheKeyHash?: string;
+  partial?: "full" | "candidate" | "patch" | "fallback";
+  partialReason?: string;
+  partialCommonPrefixLength?: number;
+  patchStartIndex?: number;
+  patchSegmentPath?: string;
+  patchStartSegment?: string;
+  patchHeadSafe?: boolean;
+  patchHeadSnapshot?: string;
+  routeState?: string;
+}
+
 export interface SsrFromRscInput {
   request?: Request;
   requestStore?: AkanRequestStore;

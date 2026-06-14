@@ -12,22 +12,25 @@ import { type AkanRequestStore, createRequestStore, parseCookieHeader } from "ak
 import type { AkanMetricsReport } from "akanjs/service";
 import {
   type BuilderRpc,
+  type ClientManifest,
+  type MergedManifest,
   RouteClientCache,
   type RouteSeedIndex,
   RouteSeedIndexStore,
   RoutesManifestStore,
 } from "./artifact";
 import {
-  createRouteCacheEntry,
   getClientFacingOrigin,
-  isPublicRouteCacheableRequest,
+  hasRouteCacheInvalidationScope,
   isRouteCachePathAllowed,
   LruTtlCache,
-  normalizeRouteCacheTtl,
   parsePositiveInt,
   type RouteCacheEntry,
+  type RouteCacheInvalidation,
   type RouteCacheRenderState,
+  resolvePublicRouteCacheEntryDecision,
   resolveRouteCacheStoreTtl,
+  shouldInvalidateRouteCacheEntry,
   shouldStoreRouteCache,
 } from "./cachePolicy";
 import { DevHmrController } from "./hmr";
@@ -35,13 +38,24 @@ import { HMR_CLIENT_SCRIPT } from "./hmr/clientScript";
 import type { HmrWsData, HmrWsHub } from "./hmr/wsHub";
 import { ImageOptimizer } from "./imageOptimizer";
 import { createDefaultRobotsTxt } from "./robots";
+import {
+  AKAN_RSC_PATCH_HEAD_SAFE_HEADER,
+  AKAN_RSC_PATCH_HEAD_SNAPSHOT_HEADER,
+  AKAN_RSC_PATCH_SEGMENT_PATH_HEADER,
+  AKAN_RSC_PATCH_START_INDEX_HEADER,
+  AKAN_RSC_PATCH_START_SEGMENT_HEADER,
+  AKAN_RSC_RESPONSE_STATE_HEADER,
+} from "./routeState";
 import { type RscRedirectMethod, type RscRedirectStatus, type RscRenderResult, RscWorker } from "./rscWorkerHost";
 import { createDefaultSitemapXml, getSitemapBasePath } from "./sitemap";
 import { SsrFromRscRenderer } from "./ssrFromRscRenderer";
+import type { RscTraceMetadata, SsrManifest } from "./ssrTypes";
 import { createSystemPageResponse, getSystemPageHomeHref } from "./systemPages";
 import type { BaseBuildArtifact, HttpRoutes, RenderState } from "./types";
 
 const RESERVED_BASE_PATHS = new Set(["admin"]);
+const CLIENT_CLOSED_REQUEST_STATUS = 499;
+export const DEFAULT_HTML_RESULT_CACHE_MAX_BODY_BYTES = 2 * 1024 * 1024;
 
 export function createRscRedirectResponse(
   location: string,
@@ -74,10 +88,36 @@ export function createRscNotFoundFallbackResponse(): Response {
   return createRscStreamResponse("0:null\n", 404);
 }
 
+function appendRscTraceHeaders(headers: Headers, trace?: RscTraceMetadata): void {
+  if (!trace) return;
+  if (trace.navId) headers.set("X-Akan-Rsc-Nav-Id", trace.navId);
+  headers.set("X-Akan-Rsc-Pathname", trace.pathname);
+  headers.set("X-Akan-Rsc-Route", trace.routeId);
+  headers.set("X-Akan-Rsc-Cache", trace.cache);
+  if (trace.cacheReason) headers.set("X-Akan-Rsc-Cache-Reason", trace.cacheReason);
+  if (trace.cacheKeyHash) headers.set("X-Akan-Rsc-Cache-Key", trace.cacheKeyHash);
+  if (trace.partial) headers.set("X-Akan-Rsc-Partial", trace.partial);
+  if (trace.partialReason) headers.set("X-Akan-Rsc-Partial-Reason", trace.partialReason);
+  if (trace.partialCommonPrefixLength !== undefined) {
+    headers.set("X-Akan-Rsc-Partial-Common-Prefix", String(trace.partialCommonPrefixLength));
+  }
+  if (trace.patchStartIndex !== undefined)
+    headers.set(AKAN_RSC_PATCH_START_INDEX_HEADER, String(trace.patchStartIndex));
+  if (trace.patchSegmentPath) headers.set(AKAN_RSC_PATCH_SEGMENT_PATH_HEADER, trace.patchSegmentPath);
+  if (trace.patchStartSegment) headers.set(AKAN_RSC_PATCH_START_SEGMENT_HEADER, trace.patchStartSegment);
+  if (trace.patchHeadSafe) headers.set(AKAN_RSC_PATCH_HEAD_SAFE_HEADER, "1");
+  if (trace.patchHeadSnapshot) headers.set(AKAN_RSC_PATCH_HEAD_SNAPSHOT_HEADER, trace.patchHeadSnapshot);
+  if (trace.routeState) headers.set(AKAN_RSC_RESPONSE_STATE_HEADER, trace.routeState);
+}
+
 export function cacheHtmlWhileStreaming(
   stream: ReadableStream<Uint8Array>,
   onComplete: (html: string) => void,
-  options: { shouldCache?: () => boolean | Promise<boolean>; maxBodyBytes?: number | null } = {},
+  options: {
+    shouldCache?: () => boolean | Promise<boolean>;
+    maxBodyBytes?: number | null;
+    onSkip?: (reason: "body-too-large" | "store-skip") => void;
+  } = {},
 ): ReadableStream<Uint8Array> {
   const chunks: Uint8Array[] = [];
   let byteLength = 0;
@@ -99,7 +139,10 @@ export function cacheHtmlWhileStreaming(
         controller.enqueue(chunk);
       },
       async flush() {
-        if (exceededMaxBodyBytes) return;
+        if (exceededMaxBodyBytes) {
+          options.onSkip?.("body-too-large");
+          return;
+        }
         const body = new Uint8Array(byteLength);
         let offset = 0;
         for (const chunk of chunks) {
@@ -107,7 +150,10 @@ export function cacheHtmlWhileStreaming(
           offset += chunk.byteLength;
         }
         try {
-          if (options.shouldCache && !(await options.shouldCache())) return;
+          if (options.shouldCache && !(await options.shouldCache())) {
+            options.onSkip?.("store-skip");
+            return;
+          }
           onComplete(decoder.decode(body));
         } catch {
           // Cache writes must not fail the already completed response stream.
@@ -147,10 +193,12 @@ export function isHtmlRouteCachePathAllowed(
     AKAN_HTML_RESULT_CACHE_PATHS?: string;
     AKAN_HTML_RESULT_CACHE_EXCLUDE_PATHS?: string;
   } = process.env as Record<string, string | undefined>,
+  options: { defaultAllow?: boolean } = {},
 ): boolean {
   return isRouteCachePathAllowed(pathname, {
     allow: env.AKAN_HTML_RESULT_CACHE_PATHS,
     deny: env.AKAN_HTML_RESULT_CACHE_EXCLUDE_PATHS,
+    defaultAllow: options.defaultAllow,
   });
 }
 
@@ -161,7 +209,9 @@ export async function createRscNavigationStreamResponse(
   // known before stream start still use the header envelope in the caller;
   // redirects discovered after Flight bytes have left the worker stay in the
   // Flight stream with an Akan digest that the client strips before RSDW sees it.
-  return createRscStreamResponse(result.stream, result.status ?? 200);
+  const response = createRscStreamResponse(result.stream, result.status ?? 200);
+  appendRscTraceHeaders(response.headers, result.trace);
+  return response;
 }
 
 export function normalizeRscTargetUrlForHostBasePath(
@@ -215,6 +265,9 @@ interface WebRouterOptions {
 
 interface CachedHtmlResult {
   html: string;
+  pathname: string;
+  routeId?: string;
+  tags?: string[];
 }
 
 export class WebRouter {
@@ -223,7 +276,7 @@ export class WebRouter {
   #artifact: BaseBuildArtifact;
   #rsc: RscWorker;
   #hub: HmrWsHub | null = null;
-  #prodMode = process.env.NODE_ENV === "production" || typeof process.send !== "function";
+  #prodMode = process.env.NODE_ENV === "production";
   #builderRpc: BuilderRpc | null;
   #routeCache: RouteClientCache;
   #devHmr: DevHmrController | null = null;
@@ -273,7 +326,7 @@ export class WebRouter {
     if (prebuilt) {
       this.#routeCache.seed(prebuilt);
       await this.#rsc.reload({
-        clientManifest: this.#routeCache.merged.clientManifest,
+        clientManifest: this.#mergeRuntimeManifest(this.#routeCache.merged).clientManifest,
         cssAssets: this.renderState.cssAssets,
         buildId: this.renderState.buildId,
       });
@@ -486,7 +539,8 @@ export class WebRouter {
         try {
           this.#requestStats.fullSsr += 1;
           const manifest = await this.#ensureRoute(url);
-          const htmlCacheEntry = this.#getHtmlCacheEntry(req, url);
+          const htmlCacheDecision = this.#getHtmlCacheEntry(req, url);
+          const htmlCacheEntry = htmlCacheDecision.entry;
           const cachedHtml = htmlCacheEntry ? this.#getCachedHtml(htmlCacheEntry.key) : null;
           if (cachedHtml) {
             return new Response(cachedHtml, {
@@ -502,16 +556,24 @@ export class WebRouter {
           });
           if (rscResult.type === "redirect")
             return Response.redirect(new URL(rscResult.location, url.origin), rscResult.status);
-          if (rscResult.type === "not-found") return this.#renderNotFoundResponse(req, url);
+          if (rscResult.type === "not-found") return this.#renderSystemNotFoundFallbackResponse(req, url);
           const themeCookieExists = WebRouter.#hasCookie(req, "theme");
           const hostRequestStore = createRequestStore(req);
+          const extraBootstrapInline = [
+            rscResult.trace?.routeState
+              ? `self.__AKAN_RSC_INITIAL_STATE__=${JSON.stringify(rscResult.trace.routeState)};`
+              : "",
+            !this.#prodMode ? HMR_CLIENT_SCRIPT : "",
+          ]
+            .filter(Boolean)
+            .join("\n");
           const htmlStream = await new SsrFromRscRenderer().render({
             request: req,
             requestStore: hostRequestStore,
             rscStream: rscResult.stream,
             ssrManifest: manifest.ssrManifest,
             bootstrapModules: [this.#artifact.rscClientUrl],
-            extraBootstrapInline: !this.#prodMode ? HMR_CLIENT_SCRIPT : undefined,
+            extraBootstrapInline: extraBootstrapInline || undefined,
             importmap: this.#artifact.vendorMap,
             theme: themeCookieExists ? undefined : (rscResult.theme ?? "system"),
             lateControl: rscResult.lateControl,
@@ -524,6 +586,10 @@ export class WebRouter {
           if (req.method === "HEAD") {
             const headers = new Headers(responseHeaders);
             if (htmlCacheEntry && responseStatus === 200) headers.set("X-Akan-Cache", "MISS");
+            else if (htmlCacheDecision.reason) {
+              headers.set("X-Akan-Cache", "BYPASS");
+              headers.set("X-Akan-Cache-Reason", htmlCacheDecision.reason);
+            }
             cancelStreamForHeadResponse(htmlStream, new Error("HEAD response does not consume body"));
             return new Response(null, { status: responseStatus, headers });
           }
@@ -531,6 +597,7 @@ export class WebRouter {
             const headers = new Headers(responseHeaders);
             headers.set("X-Akan-Cache", "MISS");
             let htmlStoreTtl = htmlCacheEntry.ttl;
+            let htmlCacheMetadata: Omit<CachedHtmlResult, "html"> = { pathname: url.pathname };
             const shouldCacheHtml = Promise.all([rscResult.lateControl, rscResult.cacheState]).then(
               ([control, cacheState]) => {
                 const storeTtl = resolveHtmlRouteCacheStoreTtl({
@@ -541,6 +608,11 @@ export class WebRouter {
                 });
                 if (storeTtl === null) return false;
                 htmlStoreTtl = storeTtl;
+                htmlCacheMetadata = {
+                  pathname: url.pathname,
+                  routeId: cacheState.routeId,
+                  tags: cacheState.tags,
+                };
                 return true;
               },
             );
@@ -548,11 +620,16 @@ export class WebRouter {
               cacheHtmlWhileStreaming(
                 htmlStream,
                 (html) => {
-                  this.#setCachedHtml(htmlCacheEntry.key, html, htmlStoreTtl);
+                  this.#setCachedHtml(htmlCacheEntry.key, html, htmlStoreTtl, htmlCacheMetadata);
                 },
                 {
                   shouldCache: () => shouldCacheHtml,
-                  maxBodyBytes: parsePositiveInt(process.env.AKAN_HTML_RESULT_CACHE_MAX_BODY_BYTES),
+                  maxBodyBytes:
+                    parsePositiveInt(process.env.AKAN_HTML_RESULT_CACHE_MAX_BODY_BYTES) ??
+                    DEFAULT_HTML_RESULT_CACHE_MAX_BODY_BYTES,
+                  onSkip: (reason) => {
+                    this.#logger.verbose(`html cache store skipped pathname=${url.pathname} reason=${reason}`);
+                  },
                 },
               ),
               {
@@ -561,9 +638,14 @@ export class WebRouter {
               },
             );
           }
+          const headers = new Headers(responseHeaders);
+          if (htmlCacheDecision.reason) {
+            headers.set("X-Akan-Cache", "BYPASS");
+            headers.set("X-Akan-Cache-Reason", htmlCacheDecision.reason);
+          }
           return new Response(htmlStream, {
             status: responseStatus,
-            headers: responseHeaders,
+            headers,
           });
         } catch (err) {
           return this.#renderErrorResponse(req, url.pathname, err);
@@ -599,10 +681,24 @@ export class WebRouter {
     };
   }
 
-  /** @internal Clears local route result caches owned by the host and RSC worker. */
-  invalidateRouteCaches(reason?: string): void {
-    this.#htmlCache.clear();
-    this.#rsc.invalidateRouteResultCache(reason);
+  /** @internal Clears or scopes invalidation for local route result caches owned by the host and RSC worker. */
+  invalidateRouteCaches(invalidation?: string | RouteCacheInvalidation): void {
+    const payload = typeof invalidation === "string" ? { reason: invalidation } : invalidation;
+    if (!hasRouteCacheInvalidationScope(payload)) {
+      this.#htmlCache.clear();
+    } else if (payload) {
+      this.#htmlCache.invalidate((_key, value) =>
+        shouldInvalidateRouteCacheEntry(
+          {
+            pathname: value.pathname,
+            routeId: value.routeId,
+            tags: value.tags,
+          },
+          payload,
+        ),
+      );
+    }
+    this.#rsc.invalidateRouteResultCache(invalidation);
   }
 
   /**
@@ -637,25 +733,22 @@ export class WebRouter {
   static #hasCookie(req: Request, name: string): boolean {
     return parseCookieHeader(req.headers.get("cookie") ?? "").has(name);
   }
-  #getHtmlCacheEntry(req: Request, url: URL): RouteCacheEntry | null {
-    if (!this.#prodMode || process.env.AKAN_HTML_RESULT_CACHE !== "1") {
-      this.#htmlCacheBypass += 1;
-      return null;
-    }
-    if (!isPublicRouteCacheableRequest(req)) {
-      this.#htmlCacheBypass += 1;
-      return null;
-    }
-    if (!isHtmlRouteCachePathAllowed(url.pathname)) {
-      this.#htmlCacheBypass += 1;
-      return null;
-    }
-    const ttl = normalizeRouteCacheTtl(process.env.AKAN_HTML_RESULT_CACHE_TTL);
-    if (ttl === null) {
-      this.#htmlCacheBypass += 1;
-      return null;
-    }
-    return createRouteCacheEntry({ request: req, url, theme: WebRouter.#cookieValue(req, "theme"), ttl });
+  #getHtmlCacheEntry(req: Request, url: URL): { entry: RouteCacheEntry | null; reason?: string } {
+    const decision = resolvePublicRouteCacheEntryDecision({
+      request: req,
+      url,
+      theme: WebRouter.#cookieValue(req, "theme"),
+      defaultEnabled: this.#prodMode,
+      defaultAllow: this.#prodMode,
+      env: {
+        enabled: process.env.AKAN_HTML_RESULT_CACHE,
+        ttl: process.env.AKAN_HTML_RESULT_CACHE_TTL,
+        allow: process.env.AKAN_HTML_RESULT_CACHE_PATHS,
+        deny: process.env.AKAN_HTML_RESULT_CACHE_EXCLUDE_PATHS,
+      },
+    });
+    if (!decision.entry) this.#htmlCacheBypass += 1;
+    return decision;
   }
 
   #getCachedHtml(cacheKey: string): string | null {
@@ -668,8 +761,8 @@ export class WebRouter {
     return cached.html;
   }
 
-  #setCachedHtml(cacheKey: string, html: string, ttl: number): void {
-    this.#htmlCache.set(cacheKey, { html }, ttl);
+  #setCachedHtml(cacheKey: string, html: string, ttl: number, metadata: Omit<CachedHtmlResult, "html">): void {
+    this.#htmlCache.set(cacheKey, { html, ...metadata }, ttl);
   }
 
   static #cookieValue(req: Request, name: string): string | undefined {
@@ -689,9 +782,17 @@ export class WebRouter {
     this.#logger.verbose(
       `[route-cache] ensure pathname=${url.pathname} routeId=${matched?.entry.routeId ?? "(none)"} in ${Date.now() - started}ms`,
     );
-    return this.#routeCache.snapshot();
+    return this.#mergeRuntimeManifest(this.#routeCache.snapshot());
   }
-  #renderNotFoundResponse(req: Request, url: URL): Promise<Response> {
+
+  #mergeRuntimeManifest(manifest: MergedManifest): MergedManifest {
+    return {
+      ...manifest,
+      clientManifest: WebRouter.#mergeClientManifest(this.#artifact.rscRuntimeClientManifest, manifest.clientManifest),
+      ssrManifest: WebRouter.#mergeSsrManifest(this.#artifact.rscRuntimeSsrManifest, manifest.ssrManifest),
+    };
+  }
+  #renderSystemNotFoundFallbackResponse(req: Request, url: URL): Promise<Response> {
     return createSystemPageResponse({
       kind: "not-found",
       method: req.method,
@@ -703,6 +804,7 @@ export class WebRouter {
   }
 
   #renderErrorResponse(req: Request, scope: string, err: unknown): Promise<Response> {
+    if (WebRouter.#isExpectedRequestAbort(err)) return Promise.resolve(WebRouter.#clientClosedResponse());
     const message = err instanceof Error ? err.message : String(err);
     this.#logger.error(`[SSR] render failed scope=${scope}: ${message}`);
     this.#hub?.broadcast({ type: "error", message });
@@ -719,6 +821,7 @@ export class WebRouter {
   }
 
   #renderRscErrorResponse(scope: string, err: unknown): Response {
+    if (WebRouter.#isExpectedRequestAbort(err)) return WebRouter.#clientClosedResponse();
     const message = err instanceof Error ? err.message : String(err);
     this.#logger.error(`[SSR] render failed scope=${scope}: ${message}`);
     this.#hub?.broadcast({ type: "error", message });
@@ -726,6 +829,23 @@ export class WebRouter {
       status: 500,
       headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
     });
+  }
+
+  static #clientClosedResponse(): Response {
+    return new Response(null, {
+      status: CLIENT_CLOSED_REQUEST_STATUS,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
+
+  static #isExpectedRequestAbort(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+    return (
+      error.name === "AbortError" ||
+      error.message === "The connection was closed." ||
+      error.message === "Connection closed." ||
+      error.message.includes("The connection was closed")
+    );
   }
 
   #getSystemPageHomeHref(req: Request, pathname: string): string {
@@ -817,7 +937,43 @@ export class WebRouter {
       ...artifact,
       cssAssets: artifact.cssAssets ?? {},
       pagesBundlePath,
+      rscRuntimeSsrManifest: artifact.rscRuntimeSsrManifest
+        ? WebRouter.#normalizeSsrManifest(artifact.rscRuntimeSsrManifest, normalizedArtifactDir)
+        : undefined,
       i18n: artifact.i18n ?? DEFAULT_AKAN_I18N,
+    };
+  }
+
+  static #mergeClientManifest(...manifests: Array<ClientManifest | undefined>): ClientManifest {
+    return Object.assign({}, ...manifests.filter(Boolean));
+  }
+
+  static #mergeSsrManifest(...manifests: Array<SsrManifest | undefined>): SsrManifest {
+    const definedManifests = manifests.filter((manifest): manifest is SsrManifest => Boolean(manifest));
+    return {
+      moduleLoading: null,
+      moduleMap: Object.assign({}, ...definedManifests.map((manifest) => manifest.moduleMap)),
+    };
+  }
+
+  static #normalizeSsrManifest(ssrManifest: SsrManifest, artifactDir: string): SsrManifest {
+    return {
+      ...ssrManifest,
+      moduleMap: Object.fromEntries(
+        Object.entries(ssrManifest.moduleMap).map(([entryUrl, byName]) => [
+          entryUrl,
+          Object.fromEntries(
+            Object.entries(byName).map(([name, entry]) => [
+              name,
+              {
+                ...entry,
+                id: WebRouter.#resolveArtifactPath(entry.id, artifactDir),
+                chunks: entry.chunks.map((chunk) => WebRouter.#resolveArtifactPath(chunk, artifactDir)),
+              },
+            ]),
+          ),
+        ]),
+      ),
     };
   }
 
