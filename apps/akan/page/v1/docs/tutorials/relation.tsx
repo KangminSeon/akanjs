@@ -187,7 +187,7 @@ export const dictionary = modelDictionary(["en", "ko"])
             code={`
 import { serve } from "@akanjs/service";
 
-import type * as db from "../db";
+import * as db from "../db";
 import { Revert } from "../dict"; // [!code highlight:2]
 import type * as srv from "../srv";
 

@@ -90,4 +90,17 @@ describe("system pages", () => {
     expect(headers.get("Content-Type")).toBe("text/html; charset=utf-8");
     expect(headers.get("Cache-Control")).toBe("no-store");
   });
+
+  test("keeps RSC worker system-page helpers free of react-dom/server", async () => {
+    const result = await Bun.build({
+      entrypoints: [new URL("./rscWorker.tsx", import.meta.url).pathname],
+      target: "bun",
+      conditions: ["react-server"],
+      write: false,
+    });
+
+    expect(result.success).toBe(true);
+    const output = (await Promise.all(result.outputs.map((artifact) => artifact.text()))).join("\n");
+    expect(output).not.toContain("react-dom/server");
+  });
 });

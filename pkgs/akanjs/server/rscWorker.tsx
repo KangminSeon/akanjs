@@ -64,7 +64,7 @@ import {
 } from "./rscWorkerCache";
 import { replayCachedRscResult } from "./rscWorkerReplay";
 import type { RscTraceMetadata } from "./ssrTypes";
-import { createSystemPageDocument, getSystemPageHomeHref } from "./systemPages";
+import { createSystemPageDocument, getSystemPageHomeHref } from "./systemPageDocument";
 
 interface InitMsg {
   type: "init";

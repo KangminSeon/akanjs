@@ -19,7 +19,7 @@ import {
   type LibConfigResult,
 } from "./types";
 
-const DEFAULT_BARREL_IMPORTS = ["akanjs/webkit", "akanjs/common", "akanjs/ui"];
+const DEFAULT_BARREL_IMPORTS = ["akanjs/webkit", "akanjs/common", "akanjs/ui", "akanjs/server"];
 const DEFAULT_OPTIMIZE_IMPORTS = [
   "lucide-react",
   "date-fns",
@@ -47,18 +47,8 @@ const DEFAULT_OPTIMIZE_IMPORTS = [
   "mui-core",
   "react-icons/*",
 ];
-const WORKSPACE_BARREL_FACETS = [
-  "ui",
-  "webkit",
-  "common",
-  "client",
-  "server",
-] as const;
-const SSR_RUNTIME_PACKAGES = [
-  "react",
-  "react-dom",
-  "react-server-dom-webpack",
-] as const;
+const WORKSPACE_BARREL_FACETS = ["ui", "webkit", "common", "client", "server"] as const;
+const SSR_RUNTIME_PACKAGES = ["react", "react-dom", "react-server-dom-webpack"] as const;
 const NATIVE_RUNTIME_PACKAGES = ["sharp"] as const;
 const DEFAULT_BACKEND_RUNTIME_PACKAGES = ["croner"] as const;
 const DATABASE_MODE_RUNTIME_PACKAGES = {
@@ -121,31 +111,19 @@ export class AkanAppConfig implements AppConfigResult {
     this.barrelImports = [
       ...DEFAULT_BARREL_IMPORTS,
       ...WORKSPACE_BARREL_FACETS.map((facet) => `@apps/${app.name}/${facet}`),
-      ...libs.flatMap((lib) =>
-        WORKSPACE_BARREL_FACETS.map((facet) => `@libs/${lib}/${facet}`),
-      ),
+      ...libs.flatMap((lib) => WORKSPACE_BARREL_FACETS.map((facet) => `@libs/${lib}/${facet}`)),
       ...(config?.barrelImports ?? []),
     ];
-    this.optimizeImports = [
-      ...new Set([
-        ...DEFAULT_OPTIMIZE_IMPORTS,
-        ...(config?.optimizeImports ?? []),
-      ]),
-    ];
-    this.images = mergeImageConfig(
-      config?.images as Partial<AkanImageConfig> | undefined,
-    );
+    this.optimizeImports = [...new Set([...DEFAULT_OPTIMIZE_IMPORTS, ...(config?.optimizeImports ?? [])])];
+    this.images = mergeImageConfig(config?.images as Partial<AkanImageConfig> | undefined);
     this.i18n = resolveAkanI18nConfig(config?.i18n);
     process.env.AKAN_PUBLIC_DEFAULT_LOCALE = this.i18n.defaultLocale;
     process.env.AKAN_PUBLIC_LOCALES = this.i18n.locales.join(",");
-    this.publicEnv =
-      (config?.publicEnv as string[] | undefined) ?? ([] as string[]);
+    this.publicEnv = (config?.publicEnv as string[] | undefined) ?? ([] as string[]);
     this.mobile = this.#resolveMobileConfig(config.mobile);
     this.docker = this.#makeDockerContent(config?.docker ?? {});
   }
-  #resolveMobileConfig(
-    mobile: DeepPartial<AkanMobileConfig> | undefined,
-  ): AkanMobileConfig {
+  #resolveMobileConfig(mobile: DeepPartial<AkanMobileConfig> | undefined): AkanMobileConfig {
     const { targets: rawTargets, ...rawMobile } = mobile ?? {};
     const appName = rawMobile.appName ?? this.app.name;
     const appId = rawMobile.appId ?? `com.${this.app.name}.app`;
@@ -160,11 +138,8 @@ export class AkanAppConfig implements AppConfigResult {
     const targets = Object.fromEntries(
       targetEntries.map(([name, rawTarget]) => {
         const target = rawTarget as DeepPartial<AkanMobileTargetConfig>;
-        const fallbackBasePath =
-          !rawTargets && this.basePaths.has(name) ? name : undefined;
-        const basePath =
-          (target.basePath ?? fallbackBasePath)?.replace(/^\/+|\/+$/g, "") ||
-          undefined;
+        const fallbackBasePath = !rawTargets && this.basePaths.has(name) ? name : undefined;
+        const basePath = (target.basePath ?? fallbackBasePath)?.replace(/^\/+|\/+$/g, "") || undefined;
         if (basePath && !this.basePaths.has(basePath)) {
           throw new Error(
             `Mobile target '${name}' uses unknown basePath '${basePath}' in apps/${this.app.name}/akan.config.ts`,
@@ -205,11 +180,8 @@ export class AkanAppConfig implements AppConfigResult {
       plugins: rawMobile.plugins,
     } as AkanMobileConfig;
   }
-  #defaultMobileTargetName(
-    rawTargets: DeepPartial<AkanMobileConfig>["targets"] | undefined,
-  ) {
-    if (rawTargets && Object.keys(rawTargets).length > 0)
-      return Object.keys(rawTargets)[0] as string;
+  #defaultMobileTargetName(rawTargets: DeepPartial<AkanMobileConfig>["targets"] | undefined) {
+    if (rawTargets && Object.keys(rawTargets).length > 0) return Object.keys(rawTargets)[0] as string;
     return this.basePaths.has(this.app.name) ? this.app.name : "default";
   }
   #applyRoutes(routes: AkanRouteConfig[] = []) {
@@ -218,38 +190,28 @@ export class AkanAppConfig implements AppConfigResult {
         const basePath = route.basePath.replace(/^\/+|\/+$/g, "");
         this.basePaths.add(basePath);
         const domains = this.subRoutes.getOrInsert(basePath, new Set());
-        Object.keys(route.domains).forEach(
-          (branch) => void this.branches.add(branch),
-        );
+        Object.keys(route.domains).forEach((branch) => void this.branches.add(branch));
         Object.values(route.domains)
           .flat()
           .forEach((domain) => {
             if (domain) domains.add(domain.toLowerCase().replace(/:\d+$/, ""));
           });
       } else {
-        Object.keys(route.domains).forEach(
-          (branch) => void this.branches.add(branch),
-        );
+        Object.keys(route.domains).forEach((branch) => void this.branches.add(branch));
         Object.values(route.domains)
           .flat()
           .forEach((domain) => {
-            if (domain)
-              this.domains.add(domain.toLowerCase().replace(/:\d+$/, ""));
+            if (domain) this.domains.add(domain.toLowerCase().replace(/:\d+$/, ""));
           });
       }
     }
     const appName = this.app.name.toLowerCase();
     const serveDomain = this.baseDevEnv.serveDomain.toLowerCase();
     if (this.subRoutes.size === 0)
-      this.branches.forEach(
-        (branch) =>
-          void this.domains.add(`${appName}-${branch}.${serveDomain}`),
-      );
+      this.branches.forEach((branch) => void this.domains.add(`${appName}-${branch}.${serveDomain}`));
     else
       Array.from(this.subRoutes.entries()).forEach(([basePath, domains]) => {
-        this.branches.forEach(
-          (domain) => void domains.add(`${basePath}-${domain}.${serveDomain}`),
-        );
+        this.branches.forEach((domain) => void domains.add(`${basePath}-${domain}.${serveDomain}`));
       });
   }
   #getDockerRunScripts(runs: (string | { [key in Arch]?: string })[]) {
@@ -265,15 +227,9 @@ export class AkanAppConfig implements AppConfigResult {
           .join("\n");
     });
   }
-  #getDockerImageScript(
-    image: string | { [key in Arch]?: string },
-    defaultImage: string,
-  ) {
+  #getDockerImageScript(image: string | { [key in Arch]?: string }, defaultImage: string) {
     if (typeof image === "string") return `FROM ${image}`;
-    else
-      return archs
-        .map((arch) => `FROM ${image[arch] ?? defaultImage} AS ${arch}`)
-        .join("\n");
+    else return archs.map((arch) => `FROM ${image[arch] ?? defaultImage} AS ${arch}`).join("\n");
   }
   #makeDockerContent(docker: DeepPartial<DockerConfig>): DockerConfig {
     if (docker.content)
@@ -326,9 +282,7 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
   static async from(app: App) {
     const [configImp, baseDevEnv, libs, rootPackageJson] = await Promise.all([
       import(`${app.cwdPath}/akan.config.ts`).then((mod) => mod.default),
-      WorkspaceExecutor.getBaseDevEnv(
-        path.join(app.workspace.workspaceRoot, ".env"),
-      ),
+      WorkspaceExecutor.getBaseDevEnv(path.join(app.workspace.workspaceRoot, ".env")),
       app.workspace.getLibs(),
       app.workspace.getPackageJson(),
     ]);
@@ -336,16 +290,11 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
     return new AkanAppConfig(app, libs, rootPackageJson, config, baseDevEnv);
   }
   #resolveProductionDependencyVersion(lib: string) {
-    const rootVersion =
-      this.rootPackageJson.dependencies?.[lib] ??
-      this.rootPackageJson.devDependencies?.[lib];
+    const rootVersion = this.rootPackageJson.dependencies?.[lib] ?? this.rootPackageJson.devDependencies?.[lib];
     if (rootVersion) return rootVersion;
     const akanPackageJson = getAkanPackageJson();
     if (AKAN_RUNTIME_PACKAGES.has(lib))
-      return (
-        akanPackageJson.dependencies?.[lib] ??
-        akanPackageJson.peerDependencies?.[lib]
-      );
+      return akanPackageJson.dependencies?.[lib] ?? akanPackageJson.peerDependencies?.[lib];
   }
   #getProductionRuntimePackages() {
     return [
@@ -356,14 +305,10 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
       ...this.getDatabaseModeRuntimePackages(),
     ];
   }
-  getDatabaseModeRuntimePackages(
-    databaseMode: DatabaseMode = this.defaultDatabaseMode,
-  ) {
+  getDatabaseModeRuntimePackages(databaseMode: DatabaseMode = this.defaultDatabaseMode) {
     return [...DATABASE_MODE_RUNTIME_PACKAGES[databaseMode]];
   }
-  getMissingDatabaseModeDependencySpecs(
-    databaseMode: DatabaseMode = this.defaultDatabaseMode,
-  ) {
+  getMissingDatabaseModeDependencySpecs(databaseMode: DatabaseMode = this.defaultDatabaseMode) {
     const rootDependencies = {
       ...this.rootPackageJson.dependencies,
       ...this.rootPackageJson.devDependencies,
@@ -372,8 +317,7 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
       .filter((lib) => !rootDependencies[lib])
       .map((lib) => {
         const version = this.#resolveProductionDependencyVersion(lib);
-        if (!version)
-          throw new Error(`Dependency ${lib} not found in package.json`);
+        if (!version) throw new Error(`Dependency ${lib} not found in package.json`);
         return `${lib}@${version}`;
       });
   }
@@ -386,8 +330,7 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
       dependencies: Object.fromEntries(
         [...new Set(this.#getProductionRuntimePackages())].map((lib) => {
           const version = this.#resolveProductionDependencyVersion(lib);
-          if (!version)
-            throw new Error(`Dependency ${lib} not found in package.json`);
+          if (!version) throw new Error(`Dependency ${lib} not found in package.json`);
           return [lib, version];
         }),
       ),
@@ -413,9 +356,7 @@ function getAkanPackageJson() {
   }
   for (const packageJsonPath of packageJsonPaths) {
     try {
-      akanPackageJson = JSON.parse(
-        fs.readFileSync(packageJsonPath, "utf8"),
-      ) as PackageJson;
+      akanPackageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8")) as PackageJson;
       return akanPackageJson;
     } catch {
       // Try the next known layout: source package first, bundled CLI package second.
@@ -430,9 +371,7 @@ function getAkanPackageJson() {
   return akanPackageJson;
 }
 
-function mergeImageConfig(
-  config: Partial<AkanImageConfig> = {},
-): AkanImageConfig {
+function mergeImageConfig(config: Partial<AkanImageConfig> = {}): AkanImageConfig {
   return {
     ...DEFAULT_AKAN_IMAGE_CONFIG,
     ...config,
@@ -440,10 +379,8 @@ function mergeImageConfig(
     imageSizes: config.imageSizes ?? DEFAULT_AKAN_IMAGE_CONFIG.imageSizes,
     formats: config.formats ?? DEFAULT_AKAN_IMAGE_CONFIG.formats,
     qualities: config.qualities ?? DEFAULT_AKAN_IMAGE_CONFIG.qualities,
-    remotePatterns:
-      config.remotePatterns ?? DEFAULT_AKAN_IMAGE_CONFIG.remotePatterns,
-    localPatterns:
-      config.localPatterns ?? DEFAULT_AKAN_IMAGE_CONFIG.localPatterns,
+    remotePatterns: config.remotePatterns ?? DEFAULT_AKAN_IMAGE_CONFIG.remotePatterns,
+    localPatterns: config.localPatterns ?? DEFAULT_AKAN_IMAGE_CONFIG.localPatterns,
   };
 }
 
@@ -455,9 +392,7 @@ export class AkanLibConfig implements LibConfigResult {
     this.externalLibs = config?.externalLibs ?? [];
   }
   static async from(lib: Lib) {
-    const [configImp] = await Promise.all([
-      import(`${lib.cwdPath}/akan.config.ts`).then((mod) => mod.default),
-    ]);
+    const [configImp] = await Promise.all([import(`${lib.cwdPath}/akan.config.ts`).then((mod) => mod.default)]);
     const config = typeof configImp === "function" ? configImp(lib) : configImp;
     return new AkanLibConfig(lib, config);
   }

@@ -48,7 +48,7 @@ pipeline {
                 stage("Prepare Build"){
                     steps{
                         sh "ssh -i $SSH_KEY -o StrictHostKeyChecking=no $BUILD_USER@$BUILD_HOST -p $BUILD_PORT \"mkdir -p $REPO_NAME/$BRANCH/node_modules && mkdir -p $REPO_NAME/$BRANCH/dist && touch $REPO_NAME/$BRANCH/dummy.js && chmod -R 777 $REPO_NAME/$BRANCH/dist \""
-                        sh "ssh -i $SSH_KEY -p $BUILD_PORT $BUILD_USER@$BUILD_HOST \"cd $REPO_NAME/$BRANCH && find . -maxdepth 1 ! -path . ! \\( -name node_modules -or -name package-lock.json -or -name dist -or -name .git \\) -print0 | xargs -0 rm -r\""
+                        sh "ssh -i $SSH_KEY -p $BUILD_PORT $BUILD_USER@$BUILD_HOST \"cd $REPO_NAME/$BRANCH && find . -maxdepth 1 ! -path . ! \\( -name node_modules -or -name bun.lock -or -name dist -or -name .git \\) -print0 | xargs -0 rm -r\""
                         sh "scp -i $SSH_KEY -P $BUILD_PORT codebase.tar $BUILD_USER@$BUILD_HOST:~/$REPO_NAME/$BRANCH/codebase.tar"
                         sh "ssh -i $SSH_KEY -p $BUILD_PORT $BUILD_USER@$BUILD_HOST \"cd $REPO_NAME/$BRANCH && tar -xvf codebase.tar\""
                         sh "ssh -i $SSH_KEY -p $BUILD_PORT $BUILD_USER@$BUILD_HOST \"cd $REPO_NAME/$BRANCH && echo 'USE_AKANJS_PKGS=true' >> .env\""

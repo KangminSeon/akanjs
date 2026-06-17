@@ -180,4 +180,26 @@ export class WorkspaceRunner extends runner("workspace") {
       exec.cwdPath,
     ]);
   }
+  async writeTopLevelEnv(workspace: Workspace, devProjectId: string) {
+    await workspace.writeFile(
+      ".env",
+      `AKAN_WORKSPACE_ID=${devProjectId}
+
+# organization configuration, no need to change
+AKAN_PUBLIC_REPO_NAME=${workspace.repoName}
+
+# serve domain, it changes the domain of the server.
+AKAN_PUBLIC_SERVE_DOMAIN=try.akanjs.com
+
+# development branch, debug, develop, main, etc. mainly it changes databases.
+AKAN_PUBLIC_ENV=local
+
+# local, cloud, edge it changes the connection point of the clients.
+AKAN_PUBLIC_OPERATION_MODE=local
+
+# log level, debug, info, warn, error
+AKAN_PUBLIC_LOG_LEVEL=debug
+`,
+    );
+  }
 }
