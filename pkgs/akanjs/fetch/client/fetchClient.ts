@@ -10,7 +10,7 @@ import type {
   SerializedSlice,
   ServiceSignal,
 } from "akanjs/signal";
-import type { ClientSignal, MergeAllFetchTypes, SliceMeta } from "../fetchType";
+import type { ClientSignal, FetchClientType, FetchSignalInput, MergeAllFetchTypes, SliceMeta } from "../fetchType";
 import { memoizeRequestQuery, cookies as requestCookies, headers as requestHeaders } from "../requestStorage";
 import type { GetSliceMetaObjFromDatabaseSignals } from "../types";
 import { type ErrorConstructor, HttpClient } from "./httpClient";
@@ -35,7 +35,7 @@ export type FetchProxy<
   SliceMetaObj extends Record<string, SliceMeta> = Record<never, never>,
 > = typeof global.fetch &
   FetchClient &
-  FetchType & { slice: SliceMetaObj; instance: FetchClient; _FetchType: FetchType };
+  FetchType & { slice: SliceMetaObj; instance: FetchClient; _FetchType: FetchType; _SliceMetaObj: SliceMetaObj };
 
 type ClientSignalMap<SigType extends { fetch: any }> = {
   [K in keyof SigType as SigType[K] extends DatabaseSignal<any, any, any, any>
@@ -653,9 +653,7 @@ export class FetchClient {
     if (typeof structuredClone === "function") return structuredClone(value);
     return JSON.parse(JSON.stringify(value)) as T;
   }
-  static from<
-    Signals extends (FetchProxy<any, any> | DatabaseSignal<any, any, any, any> | ServiceSignal<any, any, any>)[],
-  >(...signals: Signals): FetchProxy<MergeAllFetchTypes<Signals>, GetSliceMetaObjFromDatabaseSignals<Signals>> {
+  static from<Signals extends readonly FetchSignalInput[]>(...signals: Signals): FetchClientType<Signals> {
     const serializedSignal: { [key: string]: SerializedSignal } = {};
     const handler: Record<string, FetchHandler> = {};
     signals.forEach((signal) => {
@@ -667,8 +665,8 @@ export class FetchClient {
           (signal as DatabaseSignal | ServiceSignal).serializedSignal,
         );
       } else {
-        Object.assign(handler, (signal as FetchClient).handler);
-        Object.entries((signal as FetchClient).serializedSignal).forEach(([refName, signal]) => {
+        Object.assign(handler, signal.handler);
+        Object.entries(signal.serializedSignal).forEach(([refName, signal]) => {
           FetchClient.#mergeSerializedSignalInto(serializedSignal, refName, signal);
         });
       }
