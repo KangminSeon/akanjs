@@ -3,6 +3,7 @@ import { AppExecutor, type Exec, LibExecutor, PkgExecutor, script, type Workspac
 import { Logger } from "akanjs/common";
 
 import { ApplicationScript } from "../application/application.script";
+import { CloudScript } from "../cloud/cloud.script";
 import { LibraryScript } from "../library/library.script";
 import { PackageScript } from "../package/package.script";
 import { WorkspaceRunner } from "./workspace.runner";
@@ -12,6 +13,7 @@ export class WorkspaceScript extends script("workspace", [
   ApplicationScript,
   LibraryScript,
   PackageScript,
+  CloudScript,
 ]) {
   async createWorkspace(
     repoName: string,
@@ -90,5 +92,16 @@ export class WorkspaceScript extends script("workspace", [
     const [appNames, libNames] = await workspace.getExecs();
     for (const libName of libNames) await this.libraryScript.syncLibrary(LibExecutor.from(workspace, libName));
     for (const appName of appNames) await this.applicationScript.sync(AppExecutor.from(workspace, appName));
+  }
+  async init(devProjectId: string, workspace: Workspace) {
+    const spinner = workspace.spinning("Initializing workspace...");
+    try {
+      await this.workspaceRunner.writeTopLevelEnv(workspace, devProjectId);
+      await this.cloudScript.downloadEnv(workspace, devProjectId);
+      spinner.succeed("Workspace initialized");
+    } catch (error) {
+      spinner.fail("Workspace initialization failed");
+      throw error;
+    }
   }
 }

@@ -10,13 +10,13 @@ export class CloudCommand extends command("cloud", [CloudScript], ({ public: tar
     .option("host", String, { desc: "host of the cloud", default: GlobalConfig.akanCloudHost })
     .with(Workspace)
     .exec(async function (host, workspace) {
-      await this.cloudScript.login(host, workspace);
+      await this.cloudScript.login(workspace, host);
     }),
   logout: target({ desc: "Logout from Akan Cloud services" })
     .option("host", String, { desc: "host of the cloud", default: GlobalConfig.akanCloudHost })
     .with(Workspace)
     .exec(async function (host, workspace) {
-      await this.cloudScript.logout(host, workspace);
+      await this.cloudScript.logout(workspace, host);
     }),
   setLlm: target({ desc: "Configure LLM (Large Language Model) API key" })
     .with(Workspace)
