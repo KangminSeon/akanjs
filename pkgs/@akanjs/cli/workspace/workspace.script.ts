@@ -94,6 +94,13 @@ export class WorkspaceScript extends script("workspace", [
     for (const appName of appNames) await this.applicationScript.sync(AppExecutor.from(workspace, appName));
   }
   async init(devProjectId: string, workspace: Workspace) {
+    const [bunfigExists, packageJsonExists, tsconfigExists] = await Promise.all([
+      workspace.exists("bunfig.toml"),
+      workspace.exists("package.json"),
+      workspace.exists("tsconfig.json"),
+    ]);
+    const isRoot = bunfigExists && packageJsonExists && tsconfigExists;
+    if (!isRoot) throw new Error("Current directory is not a root workspace");
     const spinner = workspace.spinning("Initializing workspace...");
     try {
       await this.workspaceRunner.writeTopLevelEnv(workspace, devProjectId);

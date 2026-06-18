@@ -1,6 +1,6 @@
 {
   "name": "akanjs",
-  "version": "2.3.3",
+  "version": "2.3.4-rc.1",
   "sourceType": "module",
   "type": "module",
   "publishConfig": {
@@ -83,6 +83,7 @@
       "types": "./server/index.ts",
       "default": "./server/index.ts"
     },
+    "./server/*": "./server/*",
     "./service": {
       "import": "./service/index.ts",
       "types": "./service/index.ts",

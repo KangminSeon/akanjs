@@ -64,10 +64,10 @@ export class WorkspaceCommand extends command("workspace", [WorkspaceScript], ({
     .exec(async function (workspace) {
       await this.workspaceScript.syncAll(workspace);
     }),
-  init: target({ desc: "Initialize the workspace" })
+  init: target({ desc: "Initialize the workspace", runsOnWorkspaceRoot: false })
     .arg("devProjectId", String, { desc: "the ID of the workspace" })
     .with(Workspace)
-    .exec(async function (workspace) {
+    .exec(async function (devProjectId, workspace) {
       await this.workspaceScript.init(devProjectId, workspace);
     }),
 })) {}
