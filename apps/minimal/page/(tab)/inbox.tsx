@@ -5,7 +5,7 @@ import { AiOutlineMessage, AiOutlineRight } from "react-icons/ai";
 export default function Page() {
   return (
     <div className="apptest-screen px-5 pb-28">
-      <Layout.Navbar className="apptest-nav" back={false}>
+      <Layout.TopInset className="apptest-nav flex items-center px-5" estimatedHeight={pageConfig.topInset}>
         <div className="flex w-full items-center justify-between">
           <div>
             <p className="apptest-subtle text-xs uppercase tracking-[0.24em]">Messages</p>
@@ -15,7 +15,7 @@ export default function Page() {
             <AiOutlineMessage />
           </div>
         </div>
-      </Layout.Navbar>
+      </Layout.TopInset>
       <div className="space-y-3 pt-5">
         {[
           ["Seolleung host", "I sent the check-in instructions.", "2m"],
@@ -40,4 +40,4 @@ export default function Page() {
     </div>
   );
 }
-export const pageConfig = { bottomInset: true, topInset: true, transition: "none", cache: true } satisfies PageConfig;
+export const pageConfig = { topInset: 72 } satisfies PageConfig;

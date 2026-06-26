@@ -12,7 +12,15 @@ const storageState = {
   jwt: null as string | null,
 };
 
+const setRequiredEnv = () => {
+  process.env.AKAN_PUBLIC_APP_NAME = "test";
+  process.env.AKAN_PUBLIC_REPO_NAME = "akanjs";
+  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "akanjs.com";
+  process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
+};
+
 beforeAll(() => {
+  setRequiredEnv();
   mock.module("akanjs/client", () => ({
     DEFAULT_BOTTOM_INSET: 34,
     DEFAULT_TOP_INSET: 44,
@@ -44,10 +52,47 @@ beforeAll(() => {
         info: { platform: deviceState.platform },
       }),
     },
+    Translator: {
+      getActiveLocale: () => undefined,
+      getActivePath: () => undefined,
+      hydrateMacroTranslations: () => undefined,
+      isHydrated: () => true,
+      markHydrated: () => undefined,
+      seed: () => undefined,
+      setActiveLocale: () => undefined,
+      setActivePath: () => undefined,
+    },
+    getExplicitPageConfigKeys: () => ({}),
+    debugFrame: () => undefined,
     initAuth: () => undefined,
+    readCssSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
+    resolvePageState: ({
+      configChain = [],
+      platform,
+    }: {
+      configChain?: Array<{
+        transition?: string;
+        safeArea?: boolean;
+        topInset?: number;
+        bottomInset?: number;
+      }>;
+      platform: string;
+    }) => {
+      const config = Object.assign({}, ...configChain);
+      return {
+        transition: config.transition ?? "none",
+        topSafeArea: config.safeArea === false || platform === "android" ? 0 : 11,
+        bottomSafeArea: config.safeArea === false || platform === "android" ? 0 : 22,
+        topInset: config.topInset ?? 0,
+        bottomInset: config.bottomInset ?? 0,
+        gesture: true,
+        cache: false,
+      };
+    },
     storage: {
       getItem: async (key: string) => (key === "jwt" ? storageState.jwt : null),
     },
+    validatePageConfig: () => undefined,
   }));
   mock.module("react-dom/client", () => ({
     createRoot: () => ({ render: () => undefined }),
@@ -85,6 +130,7 @@ const installWindow = ({
     location: {
       href,
       origin: url.origin,
+      host: url.host,
       pathname: url.pathname,
       search: url.search,
       hash: url.hash,
@@ -101,6 +147,7 @@ afterEach(() => {
   Object.defineProperty(globalThis, "document", { value: originalDocument, configurable: true });
   Object.defineProperty(globalThis, "location", { value: originalWindow?.location, configurable: true });
   process.env = { ...originalEnv };
+  setRequiredEnv();
   deviceState.lang = "en";
   deviceState.platform = "web";
   storageState.jwt = null;

@@ -110,19 +110,32 @@ export default config;`}
             })}
           </div>
           <Code.Snippet
+            title="Enable sync navigation while developing"
+            language="bash"
+            code={`AKAN_PUBLIC_SYNC_NAVIGATION=true akan start myapp`}
+          />
+          <Docs.Alert type="info">
+            {l.trans({
+              en: "Sync navigation is a local development helper. When enabled, Akan's HMR channel broadcasts CSR navigation between open clients, so a browser, simulator, and physical device can follow the same route while you tune mobile layout and transitions.",
+              ko: "Sync navigation은 로컬 개발용 보조 기능입니다. 활성화하면 Akan HMR 채널이 열려 있는 클라이언트 사이에 CSR 내비게이션을 전달하므로, 브라우저, 시뮬레이터, 실기기가 같은 route를 따라가며 모바일 레이아웃과 전환을 조정할 수 있습니다.",
+            })}
+          </Docs.Alert>
+          <Code.Snippet
             title="page/store/product/[productId].tsx"
             code={`import type { PageConfig } from "akanjs/client";
+import { Layout } from "akanjs/ui";
 
 export default function Page() {
-  return <div>Product detail</div>;
+  return (
+    <>
+      <Layout.Navbar back>Product detail</Layout.Navbar>
+      <div>Product detail</div>
+    </>
+  );
 }
 
 export const pageConfig = {
-  safeArea: true,
-  topInset: true,
-  bottomInset: true,
-  transition: "stack",
-  cache: true,
+  transition: "bottomUp",
 } satisfies PageConfig;`}
           />
           <div className="space-y-1">
@@ -130,22 +143,29 @@ export const pageConfig = {
               {
                 title: "transition",
                 desc: l.trans({
-                  en: "Controls how screens move. Detail pages often use stack; tab roots often use none.",
-                  ko: "화면이 어떻게 이동하는지 정합니다. 상세 페이지는 보통 stack, 탭 루트는 보통 none을 사용합니다.",
+                  en: "Optional override for the platform default. If you do not set it, Akan chooses an iOS/Android-native feel automatically: iOS detail pages default to stack, Android detail pages default to scaleOut, and tab/root pages default to none.",
+                  ko: "플랫폼 기본값을 위한 선택적 override입니다. 값을 지정하지 않으면 Akan이 iOS/Android 룩앤필에 맞는 전환을 자동으로 선택합니다. iOS 상세 페이지는 기본 stack, Android 상세 페이지는 기본 scaleOut, 탭/root 페이지는 기본 none을 사용합니다.",
                 }),
               },
               {
                 title: "safeArea",
                 desc: l.trans({
-                  en: "Prevents content from colliding with notches, home indicators, and system bars.",
-                  ko: "콘텐츠가 노치, 홈 인디케이터, 시스템 바와 겹치지 않게 합니다.",
+                  en: "Handles OS system areas such as notches, home indicators, and Android edge-to-edge system bars. Android avoids double padding unless reliable edge-to-edge inset values are available.",
+                  ko: "노치, 홈 인디케이터, Android edge-to-edge system bar 같은 OS 영역을 처리합니다. Android는 신뢰 가능한 edge-to-edge inset 값이 있을 때만 추가해 중복 padding을 피합니다.",
                 }),
               },
               {
                 title: "topInset / bottomInset",
                 desc: l.trans({
-                  en: "Reserves space for fixed headers, tab bars, keyboards, or bottom actions.",
-                  ko: "고정 헤더, 탭바, 키보드, 하단 액션을 위한 공간을 확보합니다.",
+                  en: "Handles app UI space through CSR frame layers. Layout.Navbar, Layout.BottomTab, and Layout.BottomInset register this automatically; keyboardSticky BottomInset is isolated into the keyboard layer while normal bottom UI stays in the bottom chrome layer.",
+                  ko: "CSR frame layer를 통해 앱 UI 공간을 처리합니다. Layout.Navbar, Layout.BottomTab, Layout.BottomInset이 자동 등록하며, keyboardSticky BottomInset은 keyboard layer로 분리되고 일반 하단 UI는 bottom chrome layer에 유지됩니다.",
+                }),
+              },
+              {
+                title: "keyboardSticky",
+                desc: l.trans({
+                  en: "On mobile CSR, keyboardSticky BottomInset becomes a keyboard accessory. The framework resizes the primary page scroll container, so mobile pages should let .akan-page-content own the main scroll instead of creating a separate primary overflow container.",
+                  ko: "모바일 CSR에서 keyboardSticky BottomInset은 keyboard accessory로 동작합니다. 프레임워크가 기본 page scroll container를 줄이므로, 모바일 페이지는 별도 primary overflow container를 만들기보다 .akan-page-content가 주 스크롤을 맡도록 구성하는 것이 좋습니다.",
                 }),
               },
               {
@@ -162,10 +182,52 @@ export const pageConfig = {
               </div>
             ))}
           </div>
+          <Code.Snippet
+            title="Android edge-to-edge safe area"
+            code={`import type { PageConfig } from "akanjs/client";
+
+export const pageConfig = {
+  safeArea: {
+    top: true,
+    bottom: true,
+    android: "edge-to-edge",
+  },
+} satisfies PageConfig;`}
+          />
+          <div className="space-y-1">
+            {[
+              {
+                title: 'android: "auto"',
+                desc: l.trans({
+                  en: "Default Android behavior. Akan uses CSS safe-area values only when they are present, which avoids adding duplicate padding in normal Android WebView layouts.",
+                  ko: "Android 기본 동작입니다. CSS safe-area 값이 실제로 있을 때만 사용하므로 일반 Android WebView 레이아웃에서 padding이 중복되는 것을 피합니다.",
+                }),
+              },
+              {
+                title: 'android: "edge-to-edge"',
+                desc: l.trans({
+                  en: "Use when the Android app draws behind the status bar or navigation bar. Akan applies the larger value from native device insets and CSS safe-area insets so content can avoid system bars.",
+                  ko: "Android 앱이 status bar나 navigation bar 뒤까지 화면을 그릴 때 사용합니다. Akan은 native device inset과 CSS safe-area inset 중 더 큰 값을 적용해 콘텐츠가 시스템 바에 가리지 않게 합니다.",
+                }),
+              },
+              {
+                title: 'android: "none"',
+                desc: l.trans({
+                  en: "Disables Android safe-area padding for pages that manage system-bar spacing manually or intentionally use an immersive/full-bleed surface.",
+                  ko: "시스템 바 여백을 직접 관리하거나 의도적으로 immersive/full-bleed 화면을 만들 때 Android safe-area padding을 끕니다.",
+                }),
+              },
+            ].map(({ title, desc }) => (
+              <div key={title} className="rounded-xl border border-base-300 bg-base-100 px-4 py-0">
+                <span className="font-mono font-semibold text-primary">{title}: </span>
+                <span className="text-base-content/70 text-sm">{desc}</span>
+              </div>
+            ))}
+          </div>
           <div>
             {l.trans({
               en: "Akan CSR pages can apply mobile-style page transitions from pageConfig. Use the demos below to compare the four transition presets in a browser CSR environment before packaging the same pages into a native shell.",
-              ko: "Akan CSR 페이지는 pageConfig를 통해 모바일 앱처럼 보이는 페이지 전환 효과를 적용할 수 있습니다. 아래 데모에서 4가지 transition preset을 브라우저 CSR 환경에서 비교한 뒤, 같은 페이지를 네이티브 shell로 패키징할 수 있습니다.",
+              ko: "Akan CSR 페이지는 pageConfig를 통해 모바일 앱처럼 보이는 페이지 전환 효과를 override할 수 있습니다. 아래 데모에서 4가지 transition preset을 브라우저 CSR 환경에서 비교한 뒤, 같은 페이지를 네이티브 shell로 패키징할 수 있습니다.",
             })}
           </div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

@@ -1,3 +1,4 @@
+import type { PageConfig } from "akanjs/client";
 import { Layout } from "akanjs/ui";
 import type { ReactNode } from "react";
 import { AiOutlineCompass, AiOutlineHeart, AiOutlineHome, AiOutlineMessage, AiOutlineUser } from "react-icons/ai";
@@ -38,3 +39,10 @@ export default function LayoutComponent({ children }: { children: ReactNode }) {
     </>
   );
 }
+
+export const pageConfig = {
+  bottomInset: 64,
+  safeArea: true,
+  cache: true,
+  transition: "none",
+} satisfies PageConfig;

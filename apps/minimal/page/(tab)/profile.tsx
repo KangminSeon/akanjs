@@ -5,7 +5,7 @@ import { AiOutlineCreditCard, AiOutlineFileText, AiOutlineRight, AiOutlineUser }
 export default function Page() {
   return (
     <div className="apptest-screen px-5 pb-28">
-      <Layout.Navbar className="apptest-nav" back={false}>
+      <Layout.TopInset className="apptest-nav flex items-center px-5" estimatedHeight={pageConfig.topInset}>
         <div className="flex w-full items-center justify-between">
           <div>
             <p className="apptest-subtle text-xs uppercase tracking-[0.24em]">Account</p>
@@ -15,7 +15,7 @@ export default function Page() {
             <AiOutlineUser />
           </div>
         </div>
-      </Layout.Navbar>
+      </Layout.TopInset>
       <section className="pt-5">
         <div className="rounded-[2rem] bg-gradient-to-br from-primary to-secondary p-5 text-primary-content">
           <div className="flex items-center gap-4">
@@ -59,4 +59,4 @@ export default function Page() {
     </div>
   );
 }
-export const pageConfig = { bottomInset: true, topInset: true, transition: "none", cache: true } satisfies PageConfig;
+export const pageConfig = { topInset: 72 } satisfies PageConfig;

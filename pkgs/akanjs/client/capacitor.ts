@@ -15,6 +15,7 @@ export type CapacitorAppModule = {
   App: {
     addListener: (eventName: string, listenerFunc: (...args: unknown[]) => void) => Promise<unknown> | unknown;
     removeAllListeners: () => Promise<void> | void;
+    exitApp?: () => Promise<void> | void;
     getInfo: () => Promise<{ id: string; version: string; build: string; [key: string]: unknown }>;
   };
 };
@@ -86,6 +87,7 @@ export type CapacitorKeyboardModule = {
   Keyboard: {
     show: () => Promise<void> | void;
     hide: () => Promise<void> | void;
+    setResizeMode?: (options: { mode: "body" | "ionic" | "native" | "none" }) => Promise<void> | void;
     addListener: (eventName: string, listenerFunc: (info: CapacitorKeyboardInfo) => void) => Promise<unknown> | unknown;
     removeAllListeners: () => Promise<void> | void;
   };

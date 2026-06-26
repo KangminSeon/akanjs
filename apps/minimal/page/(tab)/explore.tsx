@@ -1,4 +1,3 @@
-import type { PageConfig } from "akanjs/client";
 import { Link } from "akanjs/ui";
 import { AiOutlineArrowRight, AiOutlineEnvironment, AiOutlineStar } from "react-icons/ai";
 
@@ -58,19 +57,6 @@ export default function Page() {
           ))}
         </div>
       </section>
-
-      {/* <div className="mt-6 grid grid-cols-2 gap-3">
-        <LinkTest href="/wishlists?deepLink=true" />
-        <LinkTest href="/wishlists?deepLink=ㅁㄴㅇ" />
-      </div> */}
     </div>
   );
 }
-
-export const pageConfig = {
-  bottomInset: true,
-  safeArea: true,
-  topInset: false,
-  transition: "none",
-  cache: true,
-} satisfies PageConfig;
