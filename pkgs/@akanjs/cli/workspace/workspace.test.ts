@@ -198,9 +198,25 @@ describe("WorkspaceRunner", () => {
       });
 
       const workspacePackageJson = (await Bun.file(`${root}/generated/repo/package.json`).json()) as {
+        scripts: Record<string, string>;
         dependencies: Record<string, string>;
         devDependencies: Record<string, string>;
       };
+      expect(workspacePackageJson.scripts).toMatchObject({
+        "setup:agent": "akan agent install all --force",
+        "agent:doctor": "akan doctor --strict --format json",
+        "agent:mcp:plan": "akan mcp-install cursor --mode plan --force",
+        "agent:sample:service": "akan create-service billing demo --format json",
+        "agent:sample:module": "akan create-module project demo --page=true --format json",
+        "agent:sample:field":
+          "akan add-field --app demo --module project --field budget --type Int --default 0 --format json",
+        "agent:sample:status":
+          "akan add-enum-field --app demo --module project --field status --values draft,active,archived --default draft --format json",
+        "agent:sample:workflow:plan":
+          "akan workflow plan add-field --app demo --module task --field priority --type enum --values low,medium,high --default medium --format json --out .akan/workflows/plans/task-priority.json",
+        "agent:sample:workflow:dry-run":
+          "akan workflow apply .akan/workflows/plans/task-priority.json --dry-run --format json",
+      });
       expect(workspacePackageJson.dependencies.akanjs).toBe("2.0.0-beta.0");
       expect(workspacePackageJson.dependencies).toMatchObject({
         "@react-spring/web": expect.any(String),
@@ -242,8 +258,22 @@ describe("WorkspaceRunner", () => {
     tempRoots.push(root);
 
     await runner.generateAgentRules(workspace);
-    expect(await Bun.file(`${root}/AGENTS.md`).text()).toContain("repo Agent Guide");
-    expect(await Bun.file(`${root}/.cursor/rules/akan.mdc`).text()).toContain("Akan.js Workspace Rules");
+    const agentsGuide = await Bun.file(`${root}/AGENTS.md`).text();
+    const cursorRules = await Bun.file(`${root}/.cursor/rules/akan.mdc`).text();
+    expect(agentsGuide).toContain("repo Agent Guide");
+    expect(agentsGuide).toContain("Prefer Akan MCP workflows before direct source edits");
+    expect(agentsGuide).toContain("apply_workflow({ planPath })");
+    expect(agentsGuide).toContain("validationTarget");
+    expect(agentsGuide).toContain("create-module` plan/apply first, then `add-field");
+    expect(agentsGuide).toContain("akan mcp --mode plan");
+    expect(agentsGuide).toContain("akan repair generated");
+    expect(cursorRules).toContain("Akan.js Workspace Rules");
+    expect(cursorRules).toContain("Prefer Akan MCP workflows before direct source edits");
+    expect(cursorRules).toContain("apply_workflow({ planPath })");
+    expect(cursorRules).toContain("validationTarget");
+    expect(cursorRules).toContain("create-module");
+    expect(cursorRules).toContain("Direct source edits are denied");
+    expect(cursorRules).toContain("akan repair generated");
 
     await Bun.write(`${root}/AGENTS.md`, "custom\n");
     await runner.generateAgentRules(workspace);
