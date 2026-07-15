@@ -3,6 +3,8 @@ import {
   AkanContextAnalyzer,
   AppExecutor,
   CommandContainer,
+  createAkanClaudeMcpServer,
+  createAkanCodexMcpServerBlock,
   createAkanCursorMcpServer,
   ModuleExecutor,
 } from "@akanjs/devkit";
@@ -37,7 +39,7 @@ describe("ContextRunner", () => {
     const output = await new ContextRunner().getContext(workspace, { format: "json" });
     const context = JSON.parse(output) as Awaited<ReturnType<typeof AkanContextAnalyzer.analyze>>;
 
-    expect(context.generatedFiles).toContain("*/lib/option.ts");
+    expect(context.generatedFiles).not.toContain("*/lib/option.ts");
     expect(context.generatedFiles).toContain("*/ui/index.ts");
     expect(context.validationCommands).toContain("akan sync <app-or-lib>");
     expect(context.validationCommands).toContain("akan doctor --strict --format json");
@@ -198,13 +200,18 @@ describe("ContextRunner", () => {
     expect(fieldContext.data.moduleIndex.constant).toMatchObject({
       inputClassName: "PostInput",
       builderName: "field",
-      fields: [],
     });
     expect(fieldContext.data.moduleIndex.dictionary).toMatchObject({
       modelClassName: "Post",
       translatorName: "t",
-      fields: [],
     });
+    // The scaffold ships a starter `name` field wired through constant + dictionary so the module is green.
+    expect(fieldContext.data.moduleIndex.constant?.fields).toContainEqual(
+      expect.objectContaining({ name: "name", kind: "constant" }),
+    );
+    expect(fieldContext.data.moduleIndex.dictionary?.fields).toContainEqual(
+      expect.objectContaining({ name: "name", kind: "dictionary" }),
+    );
     expect(fieldContext.data.moduleIndex.fieldPresence).toContainEqual(
       expect.objectContaining({ name: "title", requested: true, constant: false, dictionary: false }),
     );
@@ -303,6 +310,77 @@ describe("ContextRunner", () => {
 
     await expect(runner.installMcp(workspace, "cursor")).rejects.toThrow('already has an "akan" MCP server');
     await expect(runner.installMcp(workspace, "cursor", { force: true })).resolves.toBe(".cursor/mcp.json");
+  });
+
+  test("installs Claude Code MCP config while preserving existing servers", async () => {
+    const { root, workspace } = await createTempApp("demo");
+    tempRoots.push(root);
+    await writeText(
+      `${root}/.mcp.json`,
+      `${JSON.stringify({ mcpServers: { existing: { type: "stdio", command: "node", args: ["server.js"] } } }, null, 2)}\n`,
+    );
+
+    const written = await new ContextRunner().installMcp(workspace, "claude", { mode: "apply" });
+    const config = (await workspace.readJson(".mcp.json")) as {
+      mcpServers: Record<string, { type: string; command: string; args: string[] }>;
+    };
+
+    expect(written).toBe(".mcp.json");
+    expect(config.mcpServers.existing).toEqual({ type: "stdio", command: "node", args: ["server.js"] });
+    expect(config.mcpServers.akan).toEqual(createAkanClaudeMcpServer("apply"));
+    // Claude does not guarantee the server cwd, so it must anchor on CLAUDE_PROJECT_DIR, not Cursor's ${workspaceFolder}.
+    const claudeCommand = JSON.stringify(config.mcpServers.akan);
+    expect(claudeCommand).toContain("CLAUDE_PROJECT_DIR");
+    expect(claudeCommand).not.toContain("workspaceFolder");
+  });
+
+  test("requires force before overwriting an existing Claude Code MCP server entry", async () => {
+    const { root, workspace } = await createTempApp("demo");
+    tempRoots.push(root);
+    await writeText(
+      `${root}/.mcp.json`,
+      `${JSON.stringify({ mcpServers: { akan: { type: "stdio", command: "other" } } }, null, 2)}\n`,
+    );
+    const runner = new ContextRunner();
+
+    await expect(runner.installMcp(workspace, "claude")).rejects.toThrow('already has an "akan" MCP server');
+    await expect(runner.installMcp(workspace, "claude", { force: true })).resolves.toBe(".mcp.json");
+  });
+
+  test("installs Codex MCP config as TOML while preserving other tables", async () => {
+    const { root, workspace } = await createTempApp("demo");
+    tempRoots.push(root);
+    await writeText(`${root}/.codex/config.toml`, 'model = "gpt-5-codex"\n\n[mcp_servers.other]\ncommand = "node"\n');
+
+    const written = await new ContextRunner().installMcp(workspace, "codex", { mode: "plan" });
+    const config = await workspace.readFile(".codex/config.toml");
+
+    expect(written).toBe(".codex/config.toml");
+    expect(config).toContain('model = "gpt-5-codex"');
+    expect(config).toContain("[mcp_servers.other]");
+    expect(config).toContain(createAkanCodexMcpServerBlock("plan").trim());
+    expect(config).toContain("akan mcp --mode plan");
+  });
+
+  test("creates the Codex config from scratch when absent", async () => {
+    const { root, workspace } = await createTempApp("demo");
+    tempRoots.push(root);
+
+    await new ContextRunner().installMcp(workspace, "codex");
+    const config = await workspace.readFile(".codex/config.toml");
+
+    expect(config.trimStart()).toStartWith("[mcp_servers.akan]");
+    expect(config).toContain(createAkanCodexMcpServerBlock("readonly").trim());
+  });
+
+  test("requires force before overwriting an existing Codex MCP server table", async () => {
+    const { root, workspace } = await createTempApp("demo");
+    tempRoots.push(root);
+    await writeText(`${root}/.codex/config.toml`, '[mcp_servers.akan]\ncommand = "other"\n');
+    const runner = new ContextRunner();
+
+    await expect(runner.installMcp(workspace, "codex")).rejects.toThrow('already has an "akan" MCP server');
+    await expect(runner.installMcp(workspace, "codex", { force: true })).resolves.toBe(".codex/config.toml");
   });
 
   test("runs workflow read tools through MCP plan mode", async () => {
@@ -486,26 +564,91 @@ describe("ContextRunner", () => {
 });
 
 describe("AgentRunner", () => {
-  test("installs agent rules with workflow policy and overwrite protection", async () => {
+  test("installs a single AGENTS.md source with thin Claude and Cursor references", async () => {
     const { root, workspace } = await createTempApp("demo");
     tempRoots.push(root);
     const runner = new AgentRunner();
 
     const written = await runner.install(workspace, ["cursor", "agents-md", "claude"]);
-
     expect(written).toEqual([".cursor/rules/akan.mdc", "AGENTS.md", "CLAUDE.md"]);
-    for (const filePath of written) {
-      const content = await Bun.file(`${root}/${filePath}`).text();
-      expect(content).toContain("Before changing a domain");
-      expect(content).toContain("Prefer Akan MCP workflows before direct source edits");
-      expect(content).toContain("planPath");
-      expect(content).toContain("apply_workflow({ planPath })");
-      expect(content).toContain("validationTarget");
-      expect(content).toContain("Direct source edits are denied");
-      expect(content).toContain("akan mcp --mode plan");
-      expect(content).toContain("akan mcp --mode apply");
-      expect(content).toContain("akan repair generated");
-    }
+
+    // AGENTS.md is the single source of truth and carries the full workflow policy in a managed block.
+    const agents = await Bun.file(`${root}/AGENTS.md`).text();
+    expect(agents).toContain("Before changing a domain");
+    expect(agents).toContain("Prefer Akan MCP workflows before direct source edits");
+    expect(agents).toContain("apply_workflow({ planPath })");
+    expect(agents).toContain("validationTarget");
+    expect(agents).toContain("Direct source edits are denied");
+    expect(agents).toContain("akan mcp --mode plan");
+    expect(agents).toContain("akan mcp --mode apply");
+    expect(agents).toContain("akan repair generated");
+    expect(agents).toContain("<!-- akan:agent:start -->");
+    expect(agents).toContain("<!-- akan:agent:end -->");
+
+    // CLAUDE.md and the Cursor rule are thin pointers to AGENTS.md, not duplicates of its content.
+    const claude = await Bun.file(`${root}/CLAUDE.md`).text();
+    expect(claude).toContain("@AGENTS.md");
+    expect(claude).not.toContain("Prefer Akan MCP workflows before direct source edits");
+    const cursor = await Bun.file(`${root}/.cursor/rules/akan.mdc`).text();
+    expect(cursor).toContain("@AGENTS.md");
+    expect(cursor).not.toContain("Prefer Akan MCP workflows before direct source edits");
+
+    // The Claude/Cursor pointers need --force to overwrite once they exist.
     await expect(runner.install(workspace, ["cursor"])).rejects.toThrow("already exists");
+  });
+
+  test("preserves hand-written AGENTS.md content and refreshes only the managed block", async () => {
+    const { root, workspace } = await createTempApp("demo");
+    tempRoots.push(root);
+    const runner = new AgentRunner();
+
+    await runner.install(workspace, ["agents-md"]);
+    const first = await Bun.file(`${root}/AGENTS.md`).text();
+
+    // Hand-written content placed outside the markers must survive a re-install without --force.
+    await Bun.write(`${root}/AGENTS.md`, `${first}\n## Team Notes\n\nUse feature branches.\n`);
+    const written = await runner.install(workspace, ["agents-md"]);
+    expect(written).toEqual(["AGENTS.md"]);
+
+    const refreshed = await Bun.file(`${root}/AGENTS.md`).text();
+    expect(refreshed).toContain("## Team Notes");
+    expect(refreshed).toContain("Use feature branches.");
+    expect(refreshed).toContain("Prefer Akan MCP workflows before direct source edits");
+    // Re-installing does not duplicate the managed block.
+    expect(refreshed.split("<!-- akan:agent:start -->").length - 1).toBe(1);
+  });
+
+  test("guides removal of scaffolded samples while they exist", async () => {
+    const { root, workspace } = await createTempApp("demo");
+    tempRoots.push(root);
+    const runner = new AgentRunner();
+
+    await writeText(`${root}/apps/demo/lib/task/task.constant.ts`, "// sample\n");
+    await writeText(`${root}/apps/demo/lib/_noti/noti.service.ts`, "// sample\n");
+    await writeText(`${root}/apps/demo/lib/__scalar/workHistory/workHistory.dictionary.ts`, "// sample\n");
+    await writeText(`${root}/apps/demo/page/task/_index.tsx`, "// sample\n");
+    await writeText(`${root}/apps/demo/page/_index.tsx`, "// Akan.js template landing page\n");
+
+    await runner.install(workspace, ["agents-md"]);
+    const agents = await Bun.file(`${root}/AGENTS.md`).text();
+    expect(agents).toContain("Start Clean (Remove Scaffolded Samples)");
+    expect(agents).toContain("apps/demo/lib/task");
+    expect(agents).toContain("apps/demo/lib/_noti");
+    expect(agents).toContain("apps/demo/lib/__scalar/workHistory");
+    expect(agents).toContain("apps/demo/page/task");
+    expect(agents).toContain("default Akan landing page");
+  });
+
+  test("omits the sample cleanup section when no samples remain", async () => {
+    const { root, workspace } = await createTempApp("demo");
+    tempRoots.push(root);
+    const runner = new AgentRunner();
+
+    // A workspace with no scaffolded samples and a custom index page.
+    await writeText(`${root}/apps/demo/page/_index.tsx`, "export default function Page() {\n  return null;\n}\n");
+
+    await runner.install(workspace, ["agents-md"]);
+    const agents = await Bun.file(`${root}/AGENTS.md`).text();
+    expect(agents).not.toContain("Start Clean (Remove Scaffolded Samples)");
   });
 });

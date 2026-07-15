@@ -50,7 +50,8 @@
       "!!**/dist",
       "!!**/.akan",
       "!!**/dump",
-      "!!**/local"
+      "!!**/local",
+      "!!**/ios/DerivedData"
     ]
   },
   "formatter": {
@@ -145,6 +146,10 @@
     {
       "includes": ["**/*.constant.ts", "**/*.document.ts", "**/*.service.ts", "**/*.store.ts"],
       "plugins": ["./node_modules/@akanjs/devkit/lint/no-js-private-class-method.grit"]
+    },
+    {
+      "includes": ["**/*.signal.ts"],
+      "plugins": ["./node_modules/@akanjs/devkit/lint/no-redeclare-predefined-endpoint.grit"]
     },
     {
       "includes": [

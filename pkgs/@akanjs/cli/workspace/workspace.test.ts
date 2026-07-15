@@ -205,7 +205,7 @@ describe("WorkspaceRunner", () => {
       expect(workspacePackageJson.scripts).toMatchObject({
         "setup:agent": "akan agent install all --force",
         "agent:doctor": "akan doctor --strict --format json",
-        "agent:mcp:plan": "akan mcp-install cursor --mode plan --force",
+        "agent:mcp:plan": "akan mcp-install all --mode plan --force",
         "agent:sample:service": "akan create-service billing demo --format json",
         "agent:sample:module": "akan create-module project demo --page=true --format json",
         "agent:sample:field":
@@ -221,6 +221,7 @@ describe("WorkspaceRunner", () => {
       expect(workspacePackageJson.dependencies).toMatchObject({
         "@react-spring/web": expect.any(String),
         "@use-gesture/react": expect.any(String),
+        chance: expect.any(String),
         croner: expect.any(String),
         react: expect.any(String),
         "react-dom": expect.any(String),
@@ -269,13 +270,10 @@ describe("WorkspaceRunner", () => {
     expect(agentsGuide).toContain("create-module` plan/apply first, then `add-field");
     expect(agentsGuide).toContain("akan mcp --mode plan");
     expect(agentsGuide).toContain("akan repair generated");
-    expect(cursorRules).toContain("Akan.js Workspace Rules");
-    expect(cursorRules).toContain("Prefer Akan MCP workflows before direct source edits");
-    expect(cursorRules).toContain("apply_workflow({ planPath })");
-    expect(cursorRules).toContain("validationTarget");
-    expect(cursorRules).toContain("create-module");
-    expect(cursorRules).toContain("Direct source edits are denied");
-    expect(cursorRules).toContain("akan repair generated");
+    // The Cursor rule is a thin reference to AGENTS.md, not a duplicate of its content.
+    expect(cursorRules).toContain("alwaysApply: true");
+    expect(cursorRules).toContain("single source of truth");
+    expect(cursorRules).toContain("@AGENTS.md");
 
     await Bun.write(`${root}/AGENTS.md`, "custom\n");
     await runner.generateAgentRules(workspace);
