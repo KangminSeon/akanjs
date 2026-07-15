@@ -9,6 +9,15 @@ const config: AppConfig = {
     targets: {
       default: {
         indexPath: "/explore",
+        permissions: ["push"],
+        files: {
+          android: {
+            "app/google-services.json": "secrets/google-services.json",
+          },
+          ios: {
+            "App/GoogleService-Info.plist": "secrets/GoogleService-Info.plist",
+          },
+        },
         deepLinks: {
           schemes: ["minimal"],
           domains: ["example.com"],

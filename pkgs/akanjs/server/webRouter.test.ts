@@ -121,6 +121,7 @@ async function withFullSsrCacheHarness<T>(
     htmlCacheEnabled?: string;
     htmlCachePaths?: string;
     htmlCacheMaxBodyBytes?: string;
+    appDir?: string;
     onRenderInput?: (input: Parameters<SsrFromRscRenderer["render"]>[0]) => void;
   } = {},
 ): Promise<T> {
@@ -130,6 +131,7 @@ async function withFullSsrCacheHarness<T>(
     AKAN_PUBLIC_REPO_NAME: process.env.AKAN_PUBLIC_REPO_NAME,
     AKAN_PUBLIC_SERVE_DOMAIN: process.env.AKAN_PUBLIC_SERVE_DOMAIN,
     AKAN_PUBLIC_OPERATION_MODE: process.env.AKAN_PUBLIC_OPERATION_MODE,
+    AKAN_APP_DIR: process.env.AKAN_APP_DIR,
     AKAN_HTML_RESULT_CACHE: process.env.AKAN_HTML_RESULT_CACHE,
     AKAN_HTML_RESULT_CACHE_PATHS: process.env.AKAN_HTML_RESULT_CACHE_PATHS,
     AKAN_HTML_RESULT_CACHE_EXCLUDE_PATHS: process.env.AKAN_HTML_RESULT_CACHE_EXCLUDE_PATHS,
@@ -141,6 +143,8 @@ async function withFullSsrCacheHarness<T>(
   process.env.AKAN_PUBLIC_REPO_NAME = "akan";
   process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.test";
   process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
+  if (options.appDir === undefined) delete process.env.AKAN_APP_DIR;
+  else process.env.AKAN_APP_DIR = options.appDir;
   if (options.htmlCacheEnabled === undefined) delete process.env.AKAN_HTML_RESULT_CACHE;
   else process.env.AKAN_HTML_RESULT_CACHE = options.htmlCacheEnabled;
   if (options.htmlCachePaths === undefined) delete process.env.AKAN_HTML_RESULT_CACHE_PATHS;
